@@ -157,6 +157,10 @@ export function toMediaSummary(raw: Raw): MediaSummary {
     description: text(p.short_description) ?? text(p.description),
     affinity: num(raw.query?.affinity),
     tags: tagsOf(raw).names,
+    tagRefs: (Array.isArray(raw.tags) ? raw.tags : []).flatMap((t: Raw) => {
+      const id = t?.id ?? t?.tag_id;
+      return typeof id === 'string' && typeof t?.name === 'string' ? [{ id, name: t.name }] : [];
+    }),
     reasons: reasonsOf(raw),
   };
 }

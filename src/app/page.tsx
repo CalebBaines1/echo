@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { ContinueLink } from '@/components/continue-link';
 import { MicIcon } from '@/components/icons';
 
 export default function WelcomePage() {
@@ -34,6 +35,7 @@ export default function WelcomePage() {
       >
         Type instead
       </Link>
+      <ContinueLink />
     </main>
   );
 }

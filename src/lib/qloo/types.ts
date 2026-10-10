@@ -68,7 +68,10 @@ export interface MediaSummary {
   year?: number;
   description?: string;
   affinity?: number;
+  /** First few tag names, for display. */
   tags: string[];
+  /** Every tag with its ID, for analysis such as taste leanings. */
+  tagRefs: Array<{ id: string; name: string }>;
   reasons: Reason[];
 }
 

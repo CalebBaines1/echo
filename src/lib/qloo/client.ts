@@ -160,7 +160,8 @@ export class QlooClient {
       'filter.price_level.max': opts.priceMax,
       'signal.interests.entities': opts.signals?.entities,
       'signal.interests.tags': opts.signals?.tags,
-      'feature.explainability': opts.explain ?? true,
+      // Omitted rather than sent as false, which is Qloo's default anyway.
+      'feature.explainability': opts.explain === false ? undefined : true,
       take: opts.take ?? 10,
     });
     return arrayAt(body, 'results', 'entities').map(toPlaceSummary);
@@ -179,7 +180,8 @@ export class QlooClient {
       'filter.tags': opts.tags,
       'signal.interests.entities': opts.signals.entities,
       'signal.interests.tags': opts.signals.tags,
-      'feature.explainability': opts.explain ?? true,
+      // Omitted rather than sent as false, which is Qloo's default anyway.
+      'feature.explainability': opts.explain === false ? undefined : true,
       take: opts.take ?? 8,
     });
     return arrayAt(body, 'results', 'entities').map(toMediaSummary);
