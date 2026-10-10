@@ -1,4 +1,5 @@
 import type { LatLon } from '@/lib/qloo/types';
+import type { DayPart } from './when';
 
 export type PlanMode = 'hobby' | 'day' | 'group';
 
@@ -6,6 +7,25 @@ export type PlanMode = 'hobby' | 'day' | 'group';
 export interface Step {
   kind: 'ok' | 'dropped' | 'running' | 'info';
   text: string;
+}
+
+/** A place shown while the planner works, before the plan exists. */
+export interface PlaceCard {
+  id: string;
+  name: string;
+  category: string;
+  miles?: number;
+  priceLevel?: number;
+  matchPercent?: number;
+  reason?: string;
+  hoursThatDay?: string;
+}
+
+/** An option the planner set aside, and why. */
+export interface DroppedOption {
+  name: string;
+  reason: string;
+  placeId?: string;
 }
 
 export interface PlanStop {
@@ -23,6 +43,8 @@ export interface PlanStop {
   matchPercent?: number;
   why?: string;
   location?: LatLon;
+  /** Group plans: estimated fit per member id, 0-99. */
+  fit?: Record<string, number>;
 }
 
 export interface PlanAction {
@@ -39,6 +61,12 @@ export interface HobbyWeek {
   title: string;
   detail: string;
   done?: boolean;
+  /** YYYY-MM-DD this step is for. */
+  date?: string;
+  /** The mission launched for this step, if any. */
+  planId?: string;
+  /** What they said after doing it. */
+  note?: string;
 }
 
 export interface GroupMember {
@@ -53,7 +81,10 @@ export interface GroupTurn {
   text: string;
 }
 
+export type Outcome = 'loved' | 'fine' | 'skipped' | 'wrong';
+
 export interface CheckIn {
+  outcome?: Outcome;
   answer: string;
   reply: string;
   learned: string[];
@@ -71,6 +102,13 @@ export interface Plan {
   summary: string;
   /** YYYY-MM-DD. */
   date?: string;
+  part?: DayPart;
+  areaLabel?: string;
+  moods?: string[];
+  /** Options the planner set aside, newest reasoning for "Why this one". */
+  dropped?: DroppedOption[];
+  /** Echo's own suggestion for the home screen, not something the person asked for. */
+  proposal?: boolean;
   stops: PlanStop[];
   backup?: PlanStop;
   steps: Step[];
@@ -80,4 +118,6 @@ export interface Plan {
   hobbyWeeks?: HobbyWeek[];
   group?: { members: GroupMember[]; exchange: GroupTurn[]; approvals: Record<string, boolean> };
   checkIn?: CheckIn;
+  /** A public link friends can open and respond to. */
+  share?: { token: string };
 }

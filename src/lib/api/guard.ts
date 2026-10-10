@@ -14,6 +14,7 @@ export const DAILY_LIMITS = {
   checkin: 20,
   compare: 20,
   group: 6,
+  geo: 40,
 } as const;
 
 export type UsageKind = keyof typeof DAILY_LIMITS;
@@ -33,6 +34,7 @@ const COST_ESTIMATE: Record<UsageKind, number> = {
   checkin: 0.002,
   compare: 0,
   group: 0.05,
+  geo: 0,
 };
 
 const BUDGET_MESSAGE = "Echo has used today's budget. It resets at midnight UTC.";

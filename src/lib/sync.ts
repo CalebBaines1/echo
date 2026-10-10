@@ -98,3 +98,63 @@ export async function joinInvite(token: string, displayName: string): Promise<vo
   const { error } = await sb.rpc('join_group', { p_token: token, p_display_name: displayName });
   if (error) throw new Error(error.message.includes('invite not found') ? 'This invite link is no longer valid.' : "Couldn't join. Try again.");
 }
+
+// ---------------------------------------------------------------------------
+// Shared plans
+
+export interface SharedPlanSnapshot {
+  title: string;
+  summary: string;
+  date?: string;
+  part?: string;
+  areaLabel?: string;
+  stops: Array<{ name: string; time?: string; category?: string; address?: string; why?: string; website?: string }>;
+  members?: Array<{ name: string }>;
+  exchange?: Array<{ name: string; text: string }>;
+}
+
+export interface SharedPlanView {
+  snapshot: SharedPlanSnapshot;
+  ownerName?: string;
+  isOwner: boolean;
+  responses: Array<{ name: string; response: 'in' | 'not_that_one'; note?: string; mine: boolean }>;
+}
+
+/** What friends see: the plan itself, never the owner's profile. */
+export function snapshotOf(plan: Plan): SharedPlanSnapshot {
+  const names = new Map((plan.group?.members ?? []).map((m) => [m.id, m.you ? 'Your friend' : m.name]));
+  return {
+    title: plan.title,
+    summary: plan.summary,
+    date: plan.date,
+    part: plan.part,
+    areaLabel: plan.areaLabel,
+    stops: plan.stops.map((s) => ({ name: s.name, time: s.time, category: s.category, address: s.address, why: s.why, website: s.website })),
+    members: plan.group?.members.map((m) => ({ name: m.you ? 'Your friend' : m.name })),
+    exchange: plan.group?.exchange.map((t) => ({ name: `${names.get(t.memberId) ?? 'Echo'}'s Echo`, text: t.text })),
+  };
+}
+
+export async function sharePlan(plan: Plan, ownerName: string): Promise<string> {
+  const sb = getSupabaseBrowser();
+  if (!sb || !(await userId())) throw new Error("Sharing needs accounts, which aren't set up here.");
+  await pushPlan(plan);
+  const { data, error } = await sb.rpc('share_plan', { p_plan: plan.id, p_owner_name: ownerName, p_snapshot: snapshotOf(plan) });
+  if (error || typeof data !== 'string') throw new Error("Couldn't create a link. Try again.");
+  return data;
+}
+
+export async function getSharedPlan(token: string): Promise<SharedPlanView | null> {
+  const sb = getSupabaseBrowser();
+  if (!sb || !(await userId())) return null;
+  const { data, error } = await sb.rpc('get_shared_plan', { p_token: token });
+  if (error) throw new Error("Couldn't load this plan. Try again.");
+  return (data as SharedPlanView) ?? null;
+}
+
+export async function respondToPlan(token: string, name: string, response: 'in' | 'not_that_one', note?: string): Promise<void> {
+  const sb = getSupabaseBrowser();
+  if (!sb || !(await userId())) throw new Error("Responding needs accounts, which aren't set up here.");
+  const { error } = await sb.rpc('respond_shared_plan', { p_token: token, p_display_name: name, p_response: response, p_note: note ?? '' });
+  if (error) throw new Error(error.message.includes('share not found') ? 'This link is no longer valid.' : "Couldn't send that. Try again.");
+}

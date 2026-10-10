@@ -16,6 +16,9 @@ const Body = z.object({
   request: z.string().trim().min(1).max(400),
   mode: z.enum(['hobby', 'day']),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  part: z.enum(['morning', 'afternoon', 'evening', 'any']).default('any'),
+  moods: z.array(z.enum(['quiet', 'cozy', 'soloFriendly', 'handsOn', 'goodForGroups'])).max(5).default([]),
+  avoidPlaceIds: z.array(z.string().max(80)).max(50).default([]),
   profile: z.object({
     tastes: z
       .array(z.object({ key: z.string(), name: z.string().max(200), type: z.enum(MENTION_TYPES), status: z.enum(['matched', 'ambiguous', 'pending', 'not_found']), entity: Entity.optional() }))
@@ -45,7 +48,7 @@ export async function POST(req: Request) {
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'Invalid request.' }, { status: 400 });
-  const { request, mode, date, profile } = parsed.data;
+  const { request, mode, date, part, moods, avoidPlaceIds, profile } = parsed.data;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -53,7 +56,7 @@ export async function POST(req: Request) {
       const send = (event: object) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       try {
         const plan = await runPlanner(
-          { request, mode, date, ...profile },
+          { request, mode, date, part, moods, avoidPlaceIds, ...profile },
           { model: getAnthropic().beta.messages, qloo: getQloo(), onEvent: send },
         );
         send({ type: 'plan', plan });

@@ -5,15 +5,22 @@ import type { Activity, Area, Preferences } from '@/lib/profile/types';
 import { signalIds } from '@/lib/profile/types';
 import type { QlooClient } from '@/lib/qloo/client';
 import { QlooOfflineError } from '@/lib/qloo/errors';
-import { PLACE_CATEGORIES, placeCategory } from '@/lib/qloo/tags';
+import { PLACE_CATEGORIES, VIBE_TAGS, placeCategory } from '@/lib/qloo/tags';
 import type { PlaceSummary } from '@/lib/qloo/types';
 import { hoursOn, isOpenAt, weekdayOf } from './time';
-import type { PlanMode, PlanStop, Step } from './types';
+import type { DroppedOption, PlaceCard, PlanMode, PlanStop, Step } from './types';
+import { PART_WINDOWS, type DayPart } from './when';
+
+export type Mood = keyof typeof VIBE_TAGS;
 
 export interface PlannerInput {
   request: string;
   mode: Exclude<PlanMode, 'group'>;
   date: string;
+  part: DayPart;
+  moods?: Mood[];
+  /** Places from recent plans to skip, unless the person loved them. */
+  avoidPlaceIds?: string[];
   tastes: HeardTaste[];
   activities: Activity[];
   preferences: Preferences;
@@ -27,9 +34,14 @@ export interface PlannerResult {
   hobbyId?: string;
   stops: PlanStop[];
   backup?: PlanStop;
+  dropped: DroppedOption[];
 }
 
-export type PlannerEvent = { type: 'step'; step: Step };
+export type PlannerEvent =
+  | { type: 'step'; step: Step }
+  | { type: 'status'; text: string }
+  | { type: 'places'; category: string; places: PlaceCard[] }
+  | { type: 'dropped'; option: DroppedOption };
 
 type BetaMessages = Pick<Anthropic['beta']['messages'], 'create'>;
 type QlooPlaces = Pick<QlooClient, 'findPlaces' | 'findTags'>;
@@ -37,20 +49,28 @@ type QlooPlaces = Pick<QlooClient, 'findPlaces' | 'findTags'>;
 const METERS_PER_MILE = 1609.34;
 const MAX_MODEL_TURNS = 10;
 
+const MOOD_WORDS: Record<Mood, string> = {
+  quiet: 'quiet',
+  cozy: 'cozy',
+  soloFriendly: 'good to go to alone',
+  handsOn: 'hands-on',
+  goodForGroups: 'good for groups',
+};
+
 export const PLANNER_SYSTEM = `You are Echo's planner. You plan real outings for one person, grounded in Qloo's taste graph and the places it returns.
 
 Rules:
 - Every place in a plan must come from a find_places result in this conversation. Never invent places, opening hours, prices, classes, events, or schedules.
 - Place results include distance in miles, a price level from 1 to 4 when known (often missing), opening hours for the plan's day when known, and a match score showing how well the place fits their taste.
-- Respect their limits: distance, budget (treat price level 1 as under $15, 2 as $15-40, 3 as $40-80, 4 as over $80, and don't rule a place out just because price is unknown), and any notes such as "prefers quiet places".
+- Respect their limits: distance, budget (treat price level 1 as under $15, 2 as $15-40, 3 as $40-80, 4 as over $80, and don't rule a place out just because price is unknown), the time window, any moods they picked, and notes such as "prefers quiet places".
 
 How to work:
 1. Pick three or four candidate categories that fit the request. Favor activities they want to try or already do, then categories that fit their tastes. Use the category ids listed below. If an activity isn't listed, call search_categories to find a place category tag for it.
 2. Call find_places for each candidate. Calling several at once is fine.
-3. Use rule_out for each option you set aside, with a short, specific reason (for example "nothing open on Saturday" or "classes over $40").
+3. Use rule_out for each option you set aside, with a short, specific reason (for example "closed on Tuesday evenings" or "loud basement bar with DJs; not quiet"). Name the place exactly as find_places did.
 4. Call finish_plan.
 
-For a hobby mission: one main stop plus a backup from a different category. For a full day: three or four stops in a sensible order with realistic times, mostly close together. Every time must fall within the place's opening hours when hours are known.
+For a hobby mission: one main stop plus a backup from a different category. For a full day: three or four stops in a sensible order with realistic times, mostly close together. Every time must fall inside the time window and within the place's opening hours when hours are known.
 
 Writing:
 - summary is spoken to the person: one or two sentences, under 35 words, second person, no lists.
@@ -145,8 +165,11 @@ interface FoundPlace {
   hoursThatDay?: string;
 }
 
+const miles = (p: PlaceSummary) => (p.distanceMeters !== undefined ? Math.round((p.distanceMeters / METERS_PER_MILE) * 10) / 10 : undefined);
+
 function describeProfile(input: PlannerInput): string {
   const p = input.preferences;
+  const [from, to] = PART_WINDOWS[input.part];
   const prefs = [
     p.company && `prefers going ${p.company === 'either' ? 'solo or with people' : p.company === 'solo' ? 'solo' : 'with people'}`,
     p.setting && `setting: ${p.setting}`,
@@ -158,12 +181,21 @@ function describeProfile(input: PlannerInput): string {
     `Request: ${input.request}`,
     `Mode: ${input.mode === 'hobby' ? 'hobby mission (one main stop plus a backup)' : 'full day out (three or four stops)'}`,
     `Day: ${weekdayOf(input.date)} ${input.date}`,
+    `Time window: ${input.part === 'any' ? 'any time of day' : input.part} (${from}-${to})`,
+    input.moods?.length ? `Moods they picked: ${input.moods.map((m) => MOOD_WORDS[m]).join(', ')}` : '',
     `Area: ${input.area.label}`,
     `Tastes: ${input.tastes.map((t) => t.entity?.name ?? t.name).join(', ') || 'none yet'}`,
     `Traits: ${input.traits?.join(', ') || 'unknown'}`,
     `Activities: ${input.activities.map((a) => `${a.name} (${a.status.replace('_', ' ')})`).join(', ') || 'none mentioned'}`,
     `Preferences: ${prefs.join('; ') || 'none stated'}`,
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function inWindow(time: string, part: DayPart): boolean {
+  const [from, to] = PART_WINDOWS[part];
+  return time >= from && time <= to;
 }
 
 export async function runPlanner(
@@ -171,29 +203,42 @@ export async function runPlanner(
   deps: { model: BetaMessages; qloo: QlooPlaces; onEvent: (e: PlannerEvent) => void },
 ): Promise<PlannerResult> {
   const emit = (step: Step) => deps.onEvent({ type: 'step', step });
+  const status = (text: string) => deps.onEvent({ type: 'status', text });
   const ids = signalIds(input.tastes);
   const names = new Map(input.tastes.flatMap((t) => (t.entity ? [[t.entity.id, t.entity.name] as const] : [])));
+  const moodTags = (input.moods ?? []).map((m) => VIBE_TAGS[m]).filter(Boolean);
+  const avoid = new Set(input.avoidPlaceIds ?? []);
   const day = weekdayOf(input.date);
   // A fixed 8 km search radius keeps requests cacheable; longer limits widen it.
   const maxMiles = input.preferences.maxMiles;
   const radiusMeters = maxMiles && maxMiles > 5 ? Math.round(maxMiles * METERS_PER_MILE) : 8000;
   const found = new Map<string, FoundPlace>();
+  const dropped: DroppedOption[] = [];
 
   const traitText = input.traits?.length ? input.traits.slice(0, 3).join(', ').toLowerCase() : input.tastes.slice(0, 3).map((t) => t.entity?.name ?? t.name).join(', ');
   emit({ kind: 'ok', text: `Read your echo: ${traitText || 'no tastes yet'}` });
+
+  function because(p: PlaceSummary): string[] {
+    return p.reasons
+      .filter((r) => r.kind === 'entity' && names.has(r.id))
+      .slice(0, 2)
+      .map((r) => names.get(r.id)!);
+  }
 
   async function findPlaces(categoryArg: string): Promise<{ content: string; isError?: boolean }> {
     const known = placeCategory(categoryArg);
     const tag = known?.placeTag ?? (categoryArg.startsWith('urn:tag:') ? categoryArg : undefined);
     if (!tag) return { content: `Unknown category "${categoryArg}". Use an id from the list or a tag from search_categories.`, isError: true };
     const label = known?.places ?? categoryArg.split(':').pop()!.replace(/_/g, ' ');
+    status(`Searching ${label} near ${input.area.label}`);
 
     let places: PlaceSummary[];
     try {
       places = await deps.qloo.findPlaces({
         near: { lat: input.area.lat, lon: input.area.lon },
         tags: [tag],
-        signals: { entities: ids },
+        // Moods boost matching places instead of filtering everything else out.
+        signals: { entities: ids, tags: moodTags.length ? moodTags : undefined },
         radiusMeters,
         take: 5,
         explain: true,
@@ -205,36 +250,44 @@ export async function runPlanner(
     }
 
     const limit = maxMiles ?? Infinity;
-    const usable = places.filter((p) => p.distanceMeters === undefined || p.distanceMeters / METERS_PER_MILE <= limit);
-    emit(
-      usable.length
-        ? { kind: 'ok', text: `Found ${usable.length} ${label} near you` }
-        : { kind: 'info', text: `No ${label} within reach` },
-    );
+    const recent = places.filter((p) => avoid.has(p.id));
+    const usable = places.filter((p) => !avoid.has(p.id) && (p.distanceMeters === undefined || p.distanceMeters / METERS_PER_MILE <= limit));
+    emit(usable.length ? { kind: 'ok', text: `Found ${usable.length} ${label} near you` } : { kind: 'info', text: `No ${label} within reach` });
+    if (recent.length) emit({ kind: 'info', text: `Skipped ${recent.map((p) => p.name).join(', ')}: you've been recently` });
 
+    const cards: PlaceCard[] = [];
     const rows = usable.map((p) => {
       const hoursThatDay = hoursOn(p.hours, day);
       found.set(p.id, { place: p, categoryId: known?.id, categoryLabel: known?.label ?? label, hoursThatDay });
-      const because = p.reasons
-        .filter((r) => r.kind === 'entity' && names.has(r.id))
-        .slice(0, 2)
-        .map((r) => names.get(r.id));
+      const tasteReasons = because(p);
+      cards.push({
+        id: p.id,
+        name: p.name,
+        category: known?.label ?? label,
+        miles: miles(p),
+        priceLevel: p.priceLevel,
+        matchPercent: p.affinity !== undefined ? Math.round(p.affinity * 100) : undefined,
+        reason: tasteReasons.length ? `Because you like ${tasteReasons.join(' and ')}` : undefined,
+        hoursThatDay,
+      });
       return {
         place_id: p.id,
         name: p.name,
-        miles: p.distanceMeters !== undefined ? Math.round((p.distanceMeters / METERS_PER_MILE) * 10) / 10 : null,
+        miles: miles(p) ?? null,
         price_level: p.priceLevel ?? null,
         [`hours_${day}`]: hoursThatDay ?? 'unknown',
         match: p.affinity !== undefined ? Math.round(p.affinity * 100) : null,
-        matches_tastes: because,
+        matches_tastes: tasteReasons,
         tags: p.tags.slice(0, 5),
         description: p.description ?? null,
       };
     });
+    if (cards.length) deps.onEvent({ type: 'places', category: known?.label ?? label, places: cards });
     return { content: JSON.stringify(rows.length ? rows : { note: `No ${label} found within reach.` }) };
   }
 
   async function searchCategories(query: string): Promise<{ content: string; isError?: boolean }> {
+    status(`Looking up places for ${query}`);
     try {
       const tags = await deps.qloo.findTags({ query, take: 10 });
       const categories = tags.filter((t) => t.id.startsWith('urn:tag:category:place:')).slice(0, 5);
@@ -242,6 +295,15 @@ export async function runPlanner(
     } catch {
       return { content: 'Category search is unavailable right now. Use the listed categories.', isError: true };
     }
+  }
+
+  function ruleOut(option: string, reason: string) {
+    const needle = option.trim().toLowerCase();
+    const match = [...found.values()].find((f) => f.place.name.toLowerCase() === needle) ?? [...found.values()].find((f) => needle.includes(f.place.name.toLowerCase()) || f.place.name.toLowerCase().includes(needle));
+    const d: DroppedOption = { name: match?.place.name ?? option.trim(), reason: reason.trim(), placeId: match?.place.id };
+    dropped.push(d);
+    emit({ kind: 'dropped', text: `Dropped ${d.name}: ${d.reason}` });
+    deps.onEvent({ type: 'dropped', option: d });
   }
 
   function toStop(placeId: string, time: string | undefined, why: string): PlanStop {
@@ -252,7 +314,7 @@ export async function runPlanner(
       name: p.name,
       time,
       category: f.categoryLabel,
-      distanceMiles: p.distanceMeters !== undefined ? Math.round((p.distanceMeters / METERS_PER_MILE) * 10) / 10 : undefined,
+      distanceMiles: miles(p),
       address: p.address,
       website: p.website,
       hoursThatDay: f.hoursThatDay,
@@ -276,7 +338,10 @@ export async function runPlanner(
         continue;
       }
       if (!/^\d{2}:\d{2}$/.test(s.time)) problems.push(`Time for ${f.place.name} must be HH:MM.`);
-      else if (isOpenAt(f.hoursThatDay, s.time) === false) problems.push(`${f.place.name} isn't open at ${s.time} on ${day} (hours: ${f.hoursThatDay}).`);
+      else {
+        if (isOpenAt(f.hoursThatDay, s.time) === false) problems.push(`${f.place.name} isn't open at ${s.time} on ${day} (hours: ${f.hoursThatDay}).`);
+        if (!inWindow(s.time, input.part)) problems.push(`${s.time} is outside the ${input.part} window (${PART_WINDOWS[input.part].join('-')}).`);
+      }
     }
     if (raw?.backup && !found.has(raw.backup.place_id)) problems.push(`Backup place_id ${raw.backup.place_id} didn't come from find_places.`);
     if (problems.length) return { problems };
@@ -290,6 +355,7 @@ export async function runPlanner(
         hobbyId: input.mode === 'hobby' ? firstCategory : undefined,
         stops: stops.map((s) => toStop(s.place_id, s.time, s.why)),
         backup: raw.backup ? toStop(raw.backup.place_id, undefined, raw.backup.why) : undefined,
+        dropped,
       },
     };
   }
@@ -297,6 +363,7 @@ export async function runPlanner(
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: describeProfile(input) }];
 
   for (let turn = 0; turn < MAX_MODEL_TURNS; turn++) {
+    status(turn === 0 ? 'Choosing what to look for' : 'Comparing options');
     const res = await deps.model.create({
       model: MODELS.planner,
       max_tokens: 8000,
@@ -329,9 +396,10 @@ export async function runPlanner(
         } else if (call.name === 'search_categories') {
           out = await searchCategories(String(args.query ?? ''));
         } else if (call.name === 'rule_out') {
-          emit({ kind: 'dropped', text: `Dropped ${String(args.option)}: ${String(args.reason)}` });
+          ruleOut(String(args.option ?? ''), String(args.reason ?? ''));
           out = { content: 'Noted.' };
         } else if (call.name === 'finish_plan') {
+          status('Checking hours and times');
           const { problems, result } = validate(args);
           if (result) {
             finished = result;
