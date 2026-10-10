@@ -12,6 +12,7 @@ import { friendAsPerson, YOU_ID, youAsPerson } from '@/lib/plans/people';
 import { formatTime, nextSaturday } from '@/lib/plans/time';
 import type { GroupMember, Plan, Step } from '@/lib/plans/types';
 import { loadProfile, newId, savePlan } from '@/lib/store';
+import { apiFetch } from '@/lib/supabase/browser';
 
 export function GroupPlanRun() {
   const router = useRouter();
@@ -44,7 +45,7 @@ export function GroupPlanRun() {
 
     (async () => {
       try {
-        const res = await fetch('/api/group/plan', {
+        const res = await apiFetch('/api/group/plan', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ people, area: profile.area, date: nextSaturday(), request: 'Plan a Saturday together.' }),

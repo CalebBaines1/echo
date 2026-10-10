@@ -1,4 +1,4 @@
-import type { Budget } from './budget';
+import type { BudgetGuard } from './budget';
 import { cacheKey, requestString, type Params, type QlooCache } from './cache';
 import { QlooError, QlooOfflineError } from './errors';
 import {
@@ -40,7 +40,7 @@ export interface QlooClientOptions {
   /** 'offline' serves only cached responses and never calls Qloo. */
   mode: QlooMode;
   cache: QlooCache;
-  budget: Budget;
+  budget: BudgetGuard;
   apiKey?: string;
   baseUrl?: string;
   fetch?: typeof fetch;
@@ -81,7 +81,7 @@ export class QlooClient {
   readonly mode: QlooMode;
   readonly stats: QlooStats = { cacheHits: 0, liveCalls: 0 };
   private readonly cache: QlooCache;
-  private readonly budget: Budget;
+  private readonly budget: BudgetGuard;
   private readonly apiKey?: string;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;

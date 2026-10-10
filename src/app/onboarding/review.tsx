@@ -5,6 +5,7 @@ import { ArrowRightIcon, XIcon } from '@/components/icons';
 import type { HeardTaste, MentionType } from '@/lib/onboarding/types';
 import type { Activity, Preferences } from '@/lib/profile/types';
 import type { EntitySummary } from '@/lib/qloo/types';
+import { apiFetch } from '@/lib/supabase/browser';
 
 const TYPE_LABEL: Record<string, string> = {
   artist: 'Music',
@@ -83,7 +84,7 @@ export function Review({
     setAddBusy(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/onboarding/resolve', {
+      const res = await apiFetch('/api/onboarding/resolve', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name, type: 'unknown' }),

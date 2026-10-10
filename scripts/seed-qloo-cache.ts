@@ -2,15 +2,34 @@
 // local dev cache, so development can run offline against real Qloo data
 // without spending any calls.
 //
-// Usage: npm run qloo:seed
+// Usage: npm run qloo:seed          (local file cache)
+//        npm run qloo:seed:db       (Supabase cache, used by deployed builds)
 
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { CACHE_TTL_MS, FileCache, cacheKey, type Params, type RequestKind } from '../src/lib/qloo';
+import { createClient } from '@supabase/supabase-js';
+import { CACHE_TTL_MS, FileCache, cacheKey, type Params, type QlooCache, type RequestKind } from '../src/lib/qloo';
+import { DbCache } from '../src/lib/qloo/db-store';
 
 const RESULTS = 'results';
+const toDb = process.argv.includes('--db');
 const dir = process.env.QLOO_CACHE_DIR || join(process.cwd(), '.cache', 'qloo');
-const cache = new FileCache(join(dir, 'responses'));
+
+let cache: QlooCache;
+let target: string;
+if (toDb) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    console.error('Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY in .env.local first.');
+    process.exit(1);
+  }
+  cache = new DbCache(createClient(url, key, { auth: { persistSession: false } }));
+  target = 'the Supabase qloo_cache table';
+} else {
+  cache = new FileCache(join(dir, 'responses'));
+  target = join(dir, 'responses');
+}
 
 function kindOf(path: string): RequestKind | undefined {
   if (path === '/search') return 'search';
@@ -53,4 +72,4 @@ for (const run of runs) {
   }
 }
 
-console.log(`Seeded ${seeded} cached responses into ${join(dir, 'responses')} (skipped ${skipped} failed or unknown).`);
+console.log(`Seeded ${seeded} cached responses into ${target} (skipped ${skipped} failed or unknown).`);

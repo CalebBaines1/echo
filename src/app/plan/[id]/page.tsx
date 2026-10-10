@@ -72,6 +72,8 @@ export default function PlanPage() {
     update({ ...p, status: 'approved', actions: p.actions.map((a) => (a.id === action.id ? { ...a, status: 'done' } : a)) });
   }
 
+  const sent = plan.actions.some((a) => a.kind === 'message' && a.status === 'done');
+
   return (
     <main className="relative flex flex-1 flex-col gap-3">
       <BackHeader href="/home" right={<span className="text-xs text-faint">{plan.date ? formatDate(plan.date) : ''}</span>}>
@@ -86,13 +88,13 @@ export default function PlanPage() {
 
       {plan.group && (
         <section className="flex flex-col gap-2">
-          <Label>Approvals</Label>
+          <Label>Who&apos;s in</Label>
           <ul className="flex flex-col gap-1.5">
             {plan.group.members.map((m) => (
               <li key={m.id} className="flex items-center justify-between rounded-xl border border-line px-3 py-2 text-[0.85rem]">
                 <span>{m.you ? 'You' : m.name}</span>
-                <span className={`text-xs font-bold ${plan.group!.approvals[m.id] ? 'text-echo' : 'text-faint'}`}>
-                  {plan.group!.approvals[m.id] ? 'Approved' : 'Waiting for their OK'}
+                <span className={`text-xs font-bold ${plan.group!.approvals[m.id] || sent ? 'text-echo' : 'text-faint'}`}>
+                  {m.you ? 'Approved' : sent ? 'Sent' : 'Not sent yet'}
                 </span>
               </li>
             ))}

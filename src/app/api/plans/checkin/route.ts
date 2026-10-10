@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAnthropic } from '@/lib/ai/anthropic';
 import { runCheckIn } from '@/lib/plans/coach';
+import { guard } from '@/lib/api/guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,9 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  const caller = await guard(req, 'checkin');
+  if (caller instanceof Response) return caller;
+
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Tell Echo how it went first.' }, { status: 400 });
   try {

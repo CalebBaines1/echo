@@ -8,6 +8,7 @@ import { profilePayload, readEvents, toPlan } from '@/lib/plans/client';
 import { nextSaturday } from '@/lib/plans/time';
 import type { Step } from '@/lib/plans/types';
 import { loadProfile, savePlan } from '@/lib/store';
+import { apiFetch } from '@/lib/supabase/browser';
 
 const RUNNING_TEXT = ['Reading your echo…', 'Searching places near you…', 'Comparing options…', 'Checking hours…'];
 
@@ -38,7 +39,7 @@ export function MissionRun() {
 
     (async () => {
       try {
-        const res = await fetch('/api/plans/mission', {
+        const res = await apiFetch('/api/plans/mission', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ request, mode, date, profile: profilePayload(profile) }),

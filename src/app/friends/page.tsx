@@ -4,8 +4,10 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { CheckIcon } from '@/components/icons';
 import { DevTools } from '@/components/dev-tools';
+import { InviteCard } from '@/components/invite-card';
 import { Button, Label, LinkButton, TabBar, Voice } from '@/components/ui';
-import { initials, loadFriends, type Friend } from '@/lib/friends';
+import { initials, loadFriends, mergeServerFriends, type Friend } from '@/lib/friends';
+import { fetchFriends } from '@/lib/sync';
 import { loadProfile, useStored } from '@/lib/store';
 
 export default function FriendsPage() {
@@ -18,6 +20,11 @@ export default function FriendsPage() {
   useEffect(() => {
     if (friends) setSelected(new Set(friends.map((f) => f.id)));
   }, [friends]);
+
+  // Pick up friends who joined since the page loaded.
+  useEffect(() => {
+    void fetchFriends().then((server) => server && mergeServerFriends(server));
+  }, []);
 
   if (profile === undefined || friends === undefined) return null;
   if (!profile) {
@@ -78,14 +85,11 @@ export default function FriendsPage() {
         </section>
       ) : (
         <div className="rounded-2xl border border-dashed border-line px-4 py-5 text-center text-sm text-muted">
-          No friends yet. Invite links arrive with accounts, so friends can do their own two-minute chat.
+          No friends yet. Send an invite link, and they&apos;ll show up here once they&apos;ve joined.
         </div>
       )}
 
-      <div className="rounded-2xl border border-line bg-surface px-3.5 py-3">
-        <p className="text-[0.9rem] font-bold">Invite with a link</p>
-        <p className="text-sm text-muted">Coming with accounts. Friends will join without signing up and see only the group comparison, not your full echo.</p>
-      </div>
+      <InviteCard />
 
       {error && (
         <p role="status" className="text-sm text-warn">

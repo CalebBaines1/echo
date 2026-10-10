@@ -21,5 +21,5 @@ export function youAsPerson(profile: EchoProfile): Person {
 }
 
 export function friendAsPerson(f: Friend): Person {
-  return { id: f.id, name: f.name, ids: signalIds(f.tastes) };
+  return { id: f.id, name: f.name, ids: signalIds(f.tastes), hobbyIds: f.hobbyIds };
 }

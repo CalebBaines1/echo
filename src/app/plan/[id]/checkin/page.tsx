@@ -6,6 +6,7 @@ import { CheckIcon, MicIcon } from '@/components/icons';
 import { BackHeader, Button, Voice } from '@/components/ui';
 import { listenOnce, speechSupport, type Listening } from '@/lib/speech/browser-speech';
 import { getPlan, loadProfile, savePlan, saveProfile, useStored } from '@/lib/store';
+import { apiFetch } from '@/lib/supabase/browser';
 
 export default function CheckInPage() {
   const { id } = useParams<{ id: string }>();
@@ -53,7 +54,7 @@ export default function CheckInPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch('/api/plans/checkin', {
+      const res = await apiFetch('/api/plans/checkin', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ planTitle: plan!.title, stops: plan!.stops.map((s) => s.name), answer: text, knownNotes: profile?.preferences.notes ?? [] }),

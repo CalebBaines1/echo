@@ -1,11 +1,13 @@
 'use client';
 
-// Browser-only storage until accounts and the database exist. Every read
-// tolerates missing or blocked storage.
+// The browser copy of the profile and plans. Reads are instant and tolerate
+// missing or blocked storage; saves also go to Supabase when it's configured
+// (see sync.ts).
 
 import { useCallback, useEffect, useState } from 'react';
 import type { EchoProfile } from '@/lib/profile/types';
 import type { Plan } from '@/lib/plans/types';
+import { pushPlan, pushProfile } from '@/lib/sync';
 
 const KEYS = {
   profile: 'echo:profile:v1',
@@ -36,6 +38,16 @@ export function loadProfile(): EchoProfile | null {
 
 export function saveProfile(profile: EchoProfile) {
   write(KEYS.profile, profile);
+  void pushProfile(profile);
+}
+
+/** Replaces the browser copy without uploading (used when pulling from the server). */
+export function writeProfileLocal(profile: EchoProfile) {
+  write(KEYS.profile, profile);
+}
+
+export function writePlansLocal(plans: Plan[]) {
+  write(KEYS.plans, plans.slice(0, 50));
 }
 
 export function loadPlans(): Plan[] {
@@ -45,6 +57,7 @@ export function loadPlans(): Plan[] {
 export function savePlan(plan: Plan) {
   const plans = loadPlans().filter((p) => p.id !== plan.id);
   write(KEYS.plans, [plan, ...plans].slice(0, 50));
+  void pushPlan(plan);
 }
 
 export function getPlan(id: string): Plan | undefined {

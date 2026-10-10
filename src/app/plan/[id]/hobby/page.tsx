@@ -6,6 +6,7 @@ import { CheckIcon } from '@/components/icons';
 import { BackHeader, Button, LinkButton, Spinner, Voice } from '@/components/ui';
 import { hobbyById } from '@/lib/qloo/tags';
 import { getPlan, loadProfile, savePlan, useStored } from '@/lib/store';
+import { apiFetch } from '@/lib/supabase/browser';
 
 export default function HobbyPlanPage() {
   const { id } = useParams<{ id: string }>();
@@ -22,7 +23,7 @@ export default function HobbyPlanPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch('/api/plans/hobby', {
+      const res = await apiFetch('/api/plans/hobby', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({

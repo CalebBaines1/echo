@@ -10,6 +10,7 @@ import type { Activity, Preferences } from '@/lib/profile/types';
 import { EMPTY_PREFERENCES, SAMPLE_AREA } from '@/lib/profile/types';
 import { loadProfile, saveProfile } from '@/lib/store';
 import { Review } from './review';
+import { apiFetch } from '@/lib/supabase/browser';
 
 type Mode = 'voice' | 'text';
 type Phase = 'start' | 'speaking' | 'listening' | 'thinking' | 'paused' | 'review';
@@ -159,7 +160,7 @@ export function OnboardingClient({ initialMode }: { initialMode: Mode }) {
     setError(null);
     let data: TurnResponse;
     try {
-      const res = await fetch('/api/onboarding/turn', {
+      const res = await apiFetch('/api/onboarding/turn', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({

@@ -3,13 +3,15 @@
 import type { HeardTaste } from '@/lib/onboarding/types';
 
 /**
- * A friend's taste profile. Until accounts exist, friends can only be added
- * as samples in development; invite links need the database.
+ * A friend's taste profile: another member of one of your groups, or a sample
+ * friend loaded in development.
  */
 export interface Friend {
   id: string;
   name: string;
   tastes: HeardTaste[];
+  hobbyIds?: string[];
+  groupId?: string;
   sample?: boolean;
 }
 
@@ -32,6 +34,11 @@ export function saveFriends(friends: Friend[]) {
   } catch {
     // Storage blocked.
   }
+}
+
+/** Replaces real friends with a fresh list from the server, keeping sample friends. */
+export function mergeServerFriends(server: Friend[]) {
+  saveFriends([...server, ...loadFriends().filter((f) => f.sample)]);
 }
 
 export function initials(name: string): string {

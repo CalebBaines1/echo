@@ -4,6 +4,7 @@ import { getAnthropic } from '@/lib/ai/anthropic';
 import { MENTION_TYPES } from '@/lib/onboarding/types';
 import { runPlanner } from '@/lib/plans/planner';
 import { getQloo } from '@/lib/qloo/server';
+import { guard } from '@/lib/api/guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,9 @@ const Body = z.object({
  *   {"type":"error","message":"..."}
  */
 export async function POST(req: Request) {
+  const caller = await guard(req, 'mission');
+  if (caller instanceof Response) return caller;
+
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'Invalid request.' }, { status: 400 });
   const { request, mode, date, profile } = parsed.data;

@@ -5,6 +5,7 @@ import { getAnthropic } from '@/lib/ai/anthropic';
 import { runInterviewerTurn } from '@/lib/onboarding/interviewer';
 import { MENTION_TYPES } from '@/lib/onboarding/types';
 import { getQloo } from '@/lib/qloo/server';
+import { guard } from '@/lib/api/guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,6 +35,9 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  const caller = await guard(req, 'turn');
+  if (caller instanceof Response) return caller;
+
   let body: z.infer<typeof Body>;
   try {
     body = Body.parse(await req.json());

@@ -53,6 +53,12 @@ export class FileBudgetStore implements BudgetStore {
   }
 }
 
+/** What the Qloo client needs from a budget: reserve before a live call, record after. */
+export interface BudgetGuard {
+  reserve(request: string): Promise<void>;
+  record(headers: Headers): Promise<void>;
+}
+
 export interface BudgetOptions {
   store: BudgetStore;
   /** Live calls allowed per UTC day. */
@@ -63,7 +69,7 @@ export interface BudgetOptions {
 }
 
 /** Counts live Qloo calls and refuses new ones past the daily cap or into the monthly reserve. */
-export class Budget {
+export class Budget implements BudgetGuard {
   private readonly store: BudgetStore;
   private readonly dailyCap: number;
   private readonly monthlyReserve: number;

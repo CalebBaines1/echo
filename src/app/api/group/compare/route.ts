@@ -4,6 +4,7 @@ import { compareGroup } from '@/lib/plans/group';
 import { QlooError } from '@/lib/qloo/errors';
 import { getQloo } from '@/lib/qloo/server';
 import { PersonSchema } from '../route-shared';
+import { guard } from '@/lib/api/guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,9 @@ export const dynamic = 'force-dynamic';
 const Body = z.object({ people: z.array(PersonSchema).min(2).max(6) });
 
 export async function POST(req: Request) {
+  const caller = await guard(req, 'compare');
+  if (caller instanceof Response) return caller;
+
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Pick at least one friend.' }, { status: 400 });
   try {

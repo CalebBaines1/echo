@@ -4,6 +4,7 @@ import { getAnthropic } from '@/lib/ai/anthropic';
 import { MENTION_TYPES } from '@/lib/onboarding/types';
 import { buildProfile } from '@/lib/profile/build';
 import { getQloo } from '@/lib/qloo/server';
+import { guard } from '@/lib/api/guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,9 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  const caller = await guard(req, 'profile');
+  if (caller instanceof Response) return caller;
+
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   try {

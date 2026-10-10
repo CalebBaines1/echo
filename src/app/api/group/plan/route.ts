@@ -3,6 +3,7 @@ import { getAnthropic } from '@/lib/ai/anthropic';
 import { GroupDataError, planGroup } from '@/lib/plans/group';
 import { getQloo } from '@/lib/qloo/server';
 import { AreaSchema, PersonSchema } from '../route-shared';
+import { guard } from '@/lib/api/guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,9 @@ const Body = z.object({
 
 /** Streams {"type":"step"} lines, then {"type":"group","result":...} or {"type":"error"}. */
 export async function POST(req: Request) {
+  const caller = await guard(req, 'group');
+  if (caller instanceof Response) return caller;
+
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: 'Invalid request.' }, { status: 400 });
 

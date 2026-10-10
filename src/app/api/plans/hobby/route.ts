@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getAnthropic } from '@/lib/ai/anthropic';
 import { writeHobbyPlan } from '@/lib/plans/coach';
+import { guard } from '@/lib/api/guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,6 +17,9 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  const caller = await guard(req, 'hobby');
+  if (caller instanceof Response) return caller;
+
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
   try {

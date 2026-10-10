@@ -7,6 +7,7 @@ import { initials, loadFriends } from '@/lib/friends';
 import type { GroupComparison, Person } from '@/lib/plans/group';
 import { friendAsPerson, YOU_ID, youAsPerson } from '@/lib/plans/people';
 import { loadProfile } from '@/lib/store';
+import { apiFetch } from '@/lib/supabase/browser';
 
 const AVATAR = ['bg-accent-soft text-accent-text', 'bg-friend-soft text-friend', 'bg-echo-soft text-echo'];
 
@@ -33,7 +34,7 @@ export function CompareScreen() {
     setError(null);
     (async () => {
       try {
-        const res = await fetch('/api/group/compare', {
+        const res = await apiFetch('/api/group/compare', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ people: group }),

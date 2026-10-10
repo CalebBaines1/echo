@@ -6,7 +6,9 @@ import { DevTools } from '@/components/dev-tools';
 import { Button, Card, Chip, Label, LinkButton, Spinner, TabBar, Voice, Why } from '@/components/ui';
 import type { BuiltProfile } from '@/lib/profile/build';
 import type { EchoProfile } from '@/lib/profile/types';
+import { pendingInvite } from '@/lib/invites';
 import { loadProfile, saveProfile, useStored } from '@/lib/store';
+import { apiFetch } from '@/lib/supabase/browser';
 
 const TYPE_LABEL: Record<string, string> = {
   tv_show: 'TV',
@@ -29,12 +31,14 @@ export function EchoProfileScreen() {
   const [error, setError] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const started = useRef(false);
+  const [invite, setInvite] = useState<string | null>(null);
+  useEffect(() => setInvite(pendingInvite()), []);
 
   const build = useCallback(async (p: EchoProfile) => {
     setBuilding(true);
     setError(null);
     try {
-      const res = await fetch('/api/profile/build', {
+      const res = await apiFetch('/api/profile/build', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ tastes: p.tastes, activities: p.activities, preferences: p.preferences }),
@@ -178,9 +182,15 @@ export function EchoProfileScreen() {
           Refresh
         </Button>
       </div>
-      <LinkButton href="/home" kind="primary">
-        Start using Echo
-      </LinkButton>
+      {invite ? (
+        <LinkButton href={`/join/${invite}`} kind="primary">
+          Finish joining your friend
+        </LinkButton>
+      ) : (
+        <LinkButton href="/home" kind="primary">
+          Start using Echo
+        </LinkButton>
+      )}
       <DevTools />
       <TabBar current="/echo" />
     </main>
