@@ -13,6 +13,7 @@ const Body = z.object({
   people: z.array(PersonSchema).min(2).max(6),
   area: AreaSchema,
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  part: z.enum(['morning', 'afternoon', 'evening', 'any']).default('any'),
   request: z.string().trim().min(1).max(400),
 });
 
@@ -33,6 +34,7 @@ export async function POST(req: Request) {
           qloo: getQloo(),
           model: getAnthropic().beta.messages,
           onStep: (step) => send({ type: 'step', step }),
+          onPlaces: (places) => send({ type: 'places', places }),
         });
         send({ type: 'group', result });
       } catch (err) {
@@ -41,7 +43,7 @@ export async function POST(req: Request) {
           type: 'error',
           message:
             err instanceof GroupDataError
-              ? 'Planning together needs live Qloo place data for everyone, which is off right now.'
+              ? "Echo couldn't find place data near you right now. Try a different request or day."
               : "Echo couldn't finish this plan. Try again.",
         });
       } finally {

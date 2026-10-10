@@ -57,7 +57,7 @@ export function InviteCard() {
     <div className="flex flex-col gap-2 rounded-2xl border border-line bg-surface px-3.5 py-3">
       <p className="text-[0.9rem] font-bold">Invite with a link</p>
       <p className="text-sm text-muted">
-        Friends do a two-minute chat without signing up. You&apos;ll see each other&apos;s tastes for planning; preferences, location, and plans stay private.
+        Friends tap a few favorites without signing up. You&apos;ll see each other&apos;s tastes for planning; preferences, location, and plans stay private.
       </p>
       {link ? (
         <>

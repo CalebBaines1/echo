@@ -3,14 +3,16 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { Exchange } from '@/components/exchange';
+import { PlaceCards } from '@/components/place-cards';
 import { StepList } from '@/components/steps';
-import { BackHeader, Button } from '@/components/ui';
+import { BackHeader, Button, Chip } from '@/components/ui';
 import { initials, loadFriends } from '@/lib/friends';
 import { readEvents } from '@/lib/plans/client';
 import type { GroupPlanResult } from '@/lib/plans/group';
 import { friendAsPerson, YOU_ID, youAsPerson } from '@/lib/plans/people';
-import { formatTime, nextSaturday } from '@/lib/plans/time';
-import type { GroupMember, Plan, Step } from '@/lib/plans/types';
+import { formatTime } from '@/lib/plans/time';
+import type { GroupMember, PlaceCard, Plan, Step } from '@/lib/plans/types';
+import { defaultWhen, isWhen, whenLabel, type When } from '@/lib/plans/when';
 import { loadProfile, newId, savePlan } from '@/lib/store';
 import { apiFetch } from '@/lib/supabase/browser';
 
@@ -18,7 +20,11 @@ export function GroupPlanRun() {
   const router = useRouter();
   const params = useSearchParams();
   const ids = (params.get('ids') ?? '').split(',').filter(Boolean);
+  const fromUrl = { date: params.get('date') ?? '', part: params.get('part') ?? '' };
+  const when: When = isWhen(fromUrl) ? fromUrl : defaultWhen('group');
+  const request = params.get('q')?.trim() || `Plan something we'd all enjoy, ${whenLabel(when).toLowerCase()}.`;
   const [steps, setSteps] = useState<Step[]>([]);
+  const [cards, setCards] = useState<PlaceCard[]>([]);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [result, setResult] = useState<GroupPlanResult | null>(null);
   const [visible, setVisible] = useState(0);
@@ -36,8 +42,9 @@ export function GroupPlanRun() {
       return;
     }
     const people = [youAsPerson(profile), ...friends.map(friendAsPerson)];
-    setMembers(people.map((p) => ({ id: p.id, name: p.name, initials: initials(p.name), you: p.id === YOU_ID })));
+    setMembers(people.map((p) => ({ id: p.id, name: p.name, initials: initials(p.name), you: p.id === YOU_ID, guest: !!p.loves })));
     setSteps([]);
+    setCards([]);
     setResult(null);
     setVisible(0);
     setError(null);
@@ -48,15 +55,18 @@ export function GroupPlanRun() {
         const res = await apiFetch('/api/group/plan', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ people, area: profile.area, date: nextSaturday(), request: 'Plan a Saturday together.' }),
+          body: JSON.stringify({ people, area: profile.area, date: when.date, part: when.part, request }),
         });
         if (!res.ok) throw new Error("Echo couldn't start this plan.");
         let finished = false;
         await readEvents(res, (e) => {
-          const ev = e as unknown as { type: string; step?: Step; result?: GroupPlanResult; message?: string };
+          const ev = e as unknown as { type: string; step?: Step; places?: PlaceCard[]; result?: GroupPlanResult; message?: string };
           if (ev.type === 'step' && ev.step) {
             collected.push(ev.step);
             setSteps([...collected]);
+          } else if (ev.type === 'places' && ev.places) {
+            const add = ev.places;
+            setCards((c) => [...c, ...add.filter((p) => !c.some((x) => x.id === p.id))]);
           } else if (ev.type === 'group' && ev.result) {
             finished = true;
             setResult(ev.result);
@@ -82,15 +92,16 @@ export function GroupPlanRun() {
 
   function approve() {
     if (!result) return;
-    const date = nextSaturday();
     const plan: Plan = {
       id: newId(),
       mode: 'group',
       createdAt: Date.now(),
       title: result.title,
-      request: 'Plan a Saturday together.',
+      request,
       summary: result.summary,
-      date,
+      date: when.date,
+      part: when.part,
+      areaLabel: loadProfile()?.area.label,
       stops: result.stops,
       steps,
       actions: [
@@ -114,11 +125,32 @@ export function GroupPlanRun() {
 
   return (
     <main className="flex flex-1 flex-col gap-3">
-      <BackHeader href={`/friends/compare?ids=${ids.join(',')}`} right={!result && !error ? <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[11px] font-bold text-accent-text">Live</span> : undefined}>
-        Planning Saturday
+      <BackHeader href="/friends" right={!result && !error ? <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-[11px] font-bold text-accent-text">Live</span> : undefined}>
+        Planning together
       </BackHeader>
-      <StepList steps={steps} running={!result && !error ? 'Getting everyone’s Echo together…' : undefined} />
-      {result && <Exchange members={members} turns={result.exchange} visible={visible} />}
+      <p className="max-w-[86%] self-end rounded-2xl rounded-br-sm bg-sunk px-3 py-2 text-[0.9rem]">{request}</p>
+      <div className="flex flex-wrap gap-1.5">
+        <Chip tone="accent">{whenLabel(when)}</Chip>
+        {members.map((m) => (
+          <Chip key={m.id}>{m.you ? 'You' : m.name}</Chip>
+        ))}
+      </div>
+      {result ? (
+        <Exchange members={members} turns={result.exchange} visible={visible} />
+      ) : (
+        <>
+          <StepList steps={steps} running={!error ? 'Getting everyone’s Echo together…' : undefined} />
+          {cards.length > 0 && <PlaceCards cards={cards} dropped={[]} />}
+        </>
+      )}
+      {result && steps.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-sm font-bold text-muted">Everything the Echos did</summary>
+          <div className="mt-2">
+            <StepList steps={steps} />
+          </div>
+        </details>
+      )}
       {done && (
         <div className="rounded-2xl border border-line bg-surface px-3.5 py-3">
           <p className="text-[0.9rem] font-bold">
@@ -138,7 +170,7 @@ export function GroupPlanRun() {
       <div className="flex-1" />
       {done && (
         <Button kind="primary" onClick={approve}>
-          Approve
+          We&apos;re in
         </Button>
       )}
     </main>

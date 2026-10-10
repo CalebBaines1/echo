@@ -74,6 +74,8 @@ export interface GroupMember {
   name: string;
   initials: string;
   you?: boolean;
+  /** No echo of their own; Echo speaks for them from a few things they love. */
+  guest?: boolean;
 }
 
 export interface GroupTurn {

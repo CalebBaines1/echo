@@ -13,6 +13,9 @@ export interface Friend {
   hobbyIds?: string[];
   groupId?: string;
   sample?: boolean;
+  /** Someone without an echo, described by a few things they love. Lives on this device only. */
+  guest?: boolean;
+  loves?: string[];
 }
 
 const KEY = 'echo:friends:v1';
@@ -36,9 +39,13 @@ export function saveFriends(friends: Friend[]) {
   }
 }
 
-/** Replaces real friends with a fresh list from the server, keeping sample friends. */
+/** Replaces real friends with a fresh list from the server, keeping sample and guest friends. */
 export function mergeServerFriends(server: Friend[]) {
-  saveFriends([...server, ...loadFriends().filter((f) => f.sample)]);
+  saveFriends([...server, ...loadFriends().filter((f) => f.sample || f.guest)]);
+}
+
+export function removeFriend(id: string) {
+  saveFriends(loadFriends().filter((f) => f.id !== id));
 }
 
 export function initials(name: string): string {

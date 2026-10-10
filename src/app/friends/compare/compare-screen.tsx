@@ -2,7 +2,8 @@
 
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { BackHeader, Button, Card, Chip, Label, LinkButton, Spinner } from '@/components/ui';
+import Link from 'next/link';
+import { BackHeader, Button, Card, Label, LinkButton, Spinner } from '@/components/ui';
 import { initials, loadFriends } from '@/lib/friends';
 import type { GroupComparison, Person } from '@/lib/plans/group';
 import { friendAsPerson, YOU_ID, youAsPerson } from '@/lib/plans/people';
@@ -10,10 +11,17 @@ import { loadProfile } from '@/lib/store';
 import { apiFetch } from '@/lib/supabase/browser';
 
 const AVATAR = ['bg-accent-soft text-accent-text', 'bg-friend-soft text-friend', 'bg-echo-soft text-echo'];
+const TYPE_LABEL: Record<string, string> = { movie: 'Film', tv_show: 'TV', book: 'Book' };
 
 export function CompareScreen() {
   const params = useSearchParams();
   const ids = (params.get('ids') ?? '').split(',').filter(Boolean);
+  // Carry the request and day through to planning.
+  const planUrl = (q?: string) => {
+    const next = new URLSearchParams(params);
+    if (q) next.set('q', q);
+    return `/friends/plan?${next}`;
+  };
   const [people, setPeople] = useState<Person[]>([]);
   const [result, setResult] = useState<GroupComparison | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,9 +93,16 @@ export function CompareScreen() {
               <Label>Shared ground</Label>
               <div className="flex flex-wrap gap-1.5">
                 {result.shared.map((t) => (
-                  <Chip key={t}>{t}</Chip>
+                  <Link
+                    key={t}
+                    href={planUrl(`Something we'd all enjoy that leans ${t.toLowerCase()}.`)}
+                    className="rounded-full border border-line bg-surface px-3 py-1.5 text-sm font-semibold hover:border-accent"
+                  >
+                    {t} →
+                  </Link>
                 ))}
               </div>
+              <p className="text-xs text-faint">Tap one to plan around it.</p>
             </section>
           )}
           <section className="flex flex-col gap-2">
@@ -111,15 +126,16 @@ export function CompareScreen() {
                 <Card key={p.id}>
                   <p className="text-[0.9rem] font-bold">
                     {p.name}
-                    {p.year && <span className="ml-1.5 text-xs font-normal text-faint">{p.year}</span>}
+                    <span className="ml-1.5 text-xs font-normal text-faint">{[TYPE_LABEL[p.type], p.year].filter(Boolean).join(' · ')}</span>
                   </p>
                 </Card>
               ))}
             </section>
           )}
+          {result.rough && <p className="text-xs text-faint">A rough comparison from your profiles. Echo couldn&apos;t check tastes against Qloo just now.</p>}
           <div className="flex-1" />
-          <LinkButton href={`/friends/plan?ids=${ids.join(',')}`} kind="primary">
-            Let our Echos plan Saturday
+          <LinkButton href={planUrl()} kind="primary">
+            Let our Echos plan it
           </LinkButton>
         </>
       )}

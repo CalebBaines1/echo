@@ -16,7 +16,7 @@ export function Exchange({ members, turns, visible = turns.length }: { members: 
         const m = members[idx];
         return (
           <p key={i} className={`max-w-[88%] rounded-xl px-3 py-2 text-[0.82rem] leading-snug ${tone.bubble} ${tone.side}`}>
-            <span className={`mb-0.5 block text-[10.5px] font-bold tracking-[0.05em] uppercase ${tone.name}`}>{m ? `${m.you ? 'Your' : `${m.name}'s`} Echo` : 'Echo'}</span>
+            <span className={`mb-0.5 block text-[10.5px] font-bold tracking-[0.05em] uppercase ${tone.name}`}>{!m ? 'Echo' : m.you ? 'Your Echo' : m.guest ? `Echo for ${m.name}` : `${m.name}'s Echo`}</span>
             {t.text}
           </p>
         );

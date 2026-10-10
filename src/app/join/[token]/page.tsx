@@ -39,7 +39,7 @@ export default function JoinPage() {
     return (
       <main className="flex flex-1 flex-col justify-center gap-4">
         <h1 className="font-voice text-[1.75rem] leading-tight font-medium">You&apos;re invited to plan together</h1>
-        <Voice>First, a two-minute chat so Echo knows what you love. Then you&apos;ll join your friend.</Voice>
+        <Voice>First, tap a few things you love so Echo knows your taste. Then you&apos;ll join your friend.</Voice>
         <LinkButton href="/onboarding" kind="primary">
           Start
         </LinkButton>

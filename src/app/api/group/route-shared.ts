@@ -6,6 +6,8 @@ export const PersonSchema = z.object({
   ids: z.array(z.string().max(80)).max(60),
   hobbyIds: z.array(z.string().max(40)).max(20).optional(),
   notes: z.array(z.string().max(120)).max(20).optional(),
+  loves: z.array(z.string().trim().max(80)).max(6).optional(),
+  tasteNames: z.array(z.string().trim().max(120)).max(8).optional(),
 });
 
 export const AreaSchema = z.object({

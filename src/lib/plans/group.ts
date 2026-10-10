@@ -7,7 +7,8 @@ import type { QlooClient } from '@/lib/qloo/client';
 import { placeCategory } from '@/lib/qloo/tags';
 import type { CompareResult, PlaceSummary } from '@/lib/qloo/types';
 import { hoursOn, isOpenAt, weekdayOf } from './time';
-import type { GroupTurn, PlanStop, Step } from './types';
+import type { GroupTurn, PlaceCard, PlanStop, Step } from './types';
+import { PART_WINDOWS, type DayPart } from './when';
 
 const METERS_PER_MILE = 1609.34;
 
@@ -19,6 +20,10 @@ export interface Person {
   /** Hobby ids from activities they do or want to try. */
   hobbyIds?: string[];
   notes?: string[];
+  /** What they love in their own words, for friends without an echo whose tastes aren't matched yet. */
+  loves?: string[];
+  /** Names of a few of their favorites, so the writer can speak for them. */
+  tasteNames?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -27,7 +32,9 @@ export interface Person {
 export interface GroupComparison {
   shared: string[];
   differences: Array<{ personId: string; tags: string[] }>;
-  picks: Array<{ id: string; name: string; year?: number }>;
+  picks: Array<{ id: string; name: string; year?: number; type: string }>;
+  /** True when Qloo couldn't be reached and this was worked out from the profiles alone. */
+  rough?: boolean;
 }
 
 // Tag kinds that say something about taste. Compare also returns occupations,
@@ -48,29 +55,65 @@ function topNames(tags: CompareResult['shared'], n: number, exclude: string[] = 
   return out;
 }
 
-export async function compareGroup(people: Person[], qloo: Pick<QlooClient, 'compare' | 'recommend'>): Promise<GroupComparison> {
-  const [you, ...others] = people;
-  if (!you || others.length === 0) throw new Error('Add at least one friend to compare.');
-  const othersIds = others.flatMap((p) => p.ids);
+const PICK_TYPES = ['movie', 'tv_show', 'book'] as const;
 
-  const [overall, ...pairs] = await Promise.all([
-    qloo.compare({ a: you.ids, b: othersIds, take: 10 }),
-    ...(others.length > 1 ? others.map((o) => qloo.compare({ a: you.ids, b: o.ids, take: 10 })) : []),
-  ]);
-  const shared = topNames(overall!.shared, 6);
+/** Without Qloo: what everyone named in common, and the hobbies everyone shares. */
+function roughComparison(people: Person[]): GroupComparison {
+  const common = <T,>(lists: T[][]) => (lists[0] ?? []).filter((x) => lists.every((l) => l.includes(x)));
+  const sameFavorites = common(people.map((p) => p.ids)).length;
+  const shared = [
+    ...(sameFavorites ? [`${sameFavorites} of the same favorites`] : []),
+    ...common(people.map((p) => p.hobbyIds ?? [])).map((h) => placeCategory(h)?.label ?? h),
+  ];
+  return {
+    shared,
+    differences: people.map((p) => ({ personId: p.id, tags: (p.loves ?? []).slice(0, 3) })),
+    picks: [],
+    rough: true,
+  };
+}
+
+export async function compareGroup(people: Person[], qloo: Pick<QlooClient, 'compare' | 'recommend'>): Promise<GroupComparison> {
+  const [you, ...everyoneElse] = people;
+  if (!you || everyoneElse.length === 0) throw new Error('Add at least one friend to compare.');
+  // Friends without matched tastes can't be compared on Qloo; they show what they love instead.
+  const others = everyoneElse.filter((p) => p.ids.length > 0);
+  const unmatched = everyoneElse.filter((p) => p.ids.length === 0).map((p) => ({ personId: p.id, tags: (p.loves ?? []).slice(0, 3) }));
+  const othersIds = others.flatMap((p) => p.ids);
+  if (you.ids.length === 0 || othersIds.length === 0) return roughComparison(people);
+
+  let overall: CompareResult;
+  let pairs: CompareResult[];
+  try {
+    [overall, ...pairs] = (await Promise.all([
+      qloo.compare({ a: you.ids, b: othersIds, take: 10 }),
+      ...(others.length > 1 ? others.map((o) => qloo.compare({ a: you.ids, b: o.ids, take: 10 })) : []),
+    ])) as [CompareResult, ...CompareResult[]];
+  } catch {
+    return roughComparison(people);
+  }
+  const shared = topNames(overall.shared, 6);
   const differences = [
-    { personId: you.id, tags: topNames(overall!.onlyA, 3, shared) },
-    ...others.map((o, i) => ({ personId: o.id, tags: topNames((others.length > 1 ? pairs[i]! : overall!).onlyB, 3, shared) })),
+    { personId: you.id, tags: topNames(overall.onlyA, 3, shared) },
+    ...others.map((o, i) => ({ personId: o.id, tags: topNames((others.length > 1 ? pairs[i]! : overall).onlyB, 3, shared) })),
+    ...unmatched,
   ];
 
-  let picks: GroupComparison['picks'] = [];
-  try {
-    const movies = await qloo.recommend({ type: 'movie', signals: { entities: people.flatMap((p) => p.ids) }, take: 8, explain: false });
-    const known = new Set(people.flatMap((p) => p.ids));
-    picks = movies.filter((m) => !known.has(m.id)).slice(0, 3).map((m) => ({ id: m.id, name: m.name, year: m.year }));
-  } catch {
-    // Picks are a nice extra; the comparison stands without them.
-  }
+  // One pick of each kind everyone should like. Picks are a nice extra; the comparison stands without them.
+  const known = new Set(people.flatMap((p) => p.ids));
+  const picks = (
+    await Promise.all(
+      PICK_TYPES.map(async (type) => {
+        try {
+          const found = await qloo.recommend({ type, signals: { entities: people.flatMap((p) => p.ids) }, take: 8, explain: false });
+          const pick = found.find((m) => !known.has(m.id));
+          return pick ? [{ id: pick.id, name: pick.name, year: pick.year, type }] : [];
+        } catch {
+          return [];
+        }
+      }),
+    )
+  ).flat();
   return { shared, differences, picks };
 }
 
@@ -108,6 +151,25 @@ export function personalFit(place: PlaceSummary, people: Person[]): Record<strin
 
 const DEFAULT_CATEGORIES = ['board_games', 'records', 'film', 'books', 'cafe'];
 
+// Words in a request that point at a category.
+const REQUEST_WORDS: Record<string, RegExp> = {
+  pottery: /pott|ceramic|clay|wheel/i,
+  board_games: /board ?game|games? night|game caf/i,
+  climbing: /climb|boulder/i,
+  records: /record|vinyl/i,
+  books: /book|read/i,
+  art: /\bart|draw|paint|sketch/i,
+  film: /film|movie|cinema/i,
+  live_music: /music|concert|gig|\bshow|band/i,
+  cafe: /coffee|caf[eé]|brunch|tea\b/i,
+};
+
+/** Up to four categories: those the request names, then everyone's hobbies, then defaults. */
+export function groupCategories(request: string, people: Person[]): string[] {
+  const asked = Object.entries(REQUEST_WORDS).filter(([, re]) => re.test(request)).map(([id]) => id);
+  return [...new Set([...asked, ...people.flatMap((p) => p.hobbyIds ?? []), ...DEFAULT_CATEGORIES])].slice(0, 4);
+}
+
 const GroupSchema = z.object({
   exchange: z
     .array(z.object({ member_id: z.string(), text: z.string() }))
@@ -125,41 +187,73 @@ export interface GroupPlanResult {
 }
 
 export async function planGroup(
-  input: { people: Person[]; area: Area; date: string; request: string },
+  input: { people: Person[]; area: Area; date: string; part?: DayPart; request: string },
   deps: {
     qloo: Pick<QlooClient, 'findPlaces'>;
     model: Pick<Anthropic['beta']['messages'], 'parse'>;
     onStep: (s: Step) => void;
+    onPlaces?: (places: PlaceCard[]) => void;
   },
 ): Promise<GroupPlanResult> {
   const { people, area, date } = input;
+  const part = input.part ?? 'any';
+  const [from, to] = PART_WINDOWS[part];
   const day = weekdayOf(date);
   const allIds = people.flatMap((p) => p.ids);
-  const categories = [...new Set([...people.flatMap((p) => p.hobbyIds ?? []), ...DEFAULT_CATEGORIES])].slice(0, 4);
+  const you = people[0]!;
+  let usedFallback = false;
+  const categories = groupCategories(input.request, people);
 
-  const names = people.map((p) => p.name).join(' and ');
-  deps.onStep({ kind: 'ok', text: `Read ${people.length} echoes: ${names}` });
+  const withEcho = people.filter((p) => !p.loves);
+  const guests = people.filter((p) => p.loves);
+  deps.onStep({
+    kind: 'ok',
+    text: [
+      `Read ${withEcho.length === 1 ? 'your echo' : `${withEcho.length} echoes: ${withEcho.map((p) => p.name).join(' and ')}`}`,
+      ...(guests.length ? [`what ${guests.map((p) => p.name).join(' and ')} ${guests.length === 1 ? 'loves' : 'love'}`] : []),
+    ].join(', and '),
+  });
 
   const scored: ScoredPlace[] = [];
   await Promise.all(
     categories.map(async (id) => {
       const cat = placeCategory(id);
       if (!cat) return;
+      const search = (entities: string[], radiusMeters?: number) =>
+        deps.qloo.findPlaces({ near: { lat: area.lat, lon: area.lon }, tags: [cat.placeTag], signals: { entities }, radiusMeters, take: 5, explain: true });
+      let places: PlaceSummary[];
+      // Only people whose tastes went into the search get a fit score.
+      let scoredFor = people.filter((p) => p.ids.length > 0);
       try {
-        const places = await deps.qloo.findPlaces({
-          near: { lat: area.lat, lon: area.lon },
-          tags: [cat.placeTag],
-          signals: { entities: allIds },
-          take: 5,
-          explain: true,
-        });
+        places = await search(allIds);
         deps.onStep({ kind: places.length ? 'ok' : 'info', text: places.length ? `Found ${places.length} ${cat.places} for everyone` : `No ${cat.places} nearby` });
-        for (const place of places) {
-          scored.push({ place, categoryLabel: cat.label, hoursThatDay: hoursOn(place.hours, day), fit: personalFit(place, people) });
-        }
       } catch {
-        deps.onStep({ kind: 'dropped', text: `Couldn't reach Qloo for ${cat.places}` });
+        // Fail soft: a search on your own echo alone (the same one solo plans run) is often still available.
+        try {
+          places = await search(you.ids, 8000);
+          usedFallback = true;
+          scoredFor = [you];
+          deps.onStep({ kind: 'info', text: `Found ${places.length} ${cat.places} from your echo; couldn't check everyone's together` });
+        } catch {
+          deps.onStep({ kind: 'dropped', text: `Couldn't reach Qloo for ${cat.places}` });
+          return;
+        }
       }
+      const cards: PlaceCard[] = [];
+      for (const place of places) {
+        const s: ScoredPlace = { place, categoryLabel: cat.label, hoursThatDay: hoursOn(place.hours, day), fit: personalFit(place, scoredFor) };
+        scored.push(s);
+        cards.push({
+          id: place.id,
+          name: place.name,
+          category: cat.label,
+          miles: place.distanceMeters !== undefined ? Math.round((place.distanceMeters / METERS_PER_MILE) * 10) / 10 : undefined,
+          priceLevel: place.priceLevel,
+          matchPercent: place.affinity !== undefined ? Math.round(place.affinity * 100) : undefined,
+          hoursThatDay: s.hoursThatDay,
+        });
+      }
+      if (cards.length) deps.onPlaces?.(cards);
     }),
   );
   if (scored.length === 0) throw new GroupDataError();
@@ -172,14 +266,15 @@ export async function planGroup(
     miles: s.place.distanceMeters !== undefined ? Math.round((s.place.distanceMeters / METERS_PER_MILE) * 10) / 10 : null,
     price_level: s.place.priceLevel ?? null,
     [`hours_${day}`]: s.hoursThatDay ?? 'unknown',
-    fit: Object.fromEntries(people.map((p) => [p.name, s.fit[p.id]])),
+    fit: Object.fromEntries(people.map((p) => [p.name, s.fit[p.id] ?? 'unknown'])),
   }));
 
   const system = `You write a short planning conversation between AI agents ("Echos"), each representing one person, followed by the plan they agree on.
 Rules:
-- Use only places from the table. Fit numbers are each person's estimated match; cite them accurately.
-- Each Echo speaks up for its person: their tastes, limits, and notes. Refer to people by name, never "he" or "she".
-- Agree on two or three stops in a sensible order, with times inside opening hours when known, and a plan that scores well for everyone rather than one person.
+- Use only places from the table. Fit numbers are each person's estimated match. Use them to choose, but never say a number: put it in words ("right up Sam's street", "a stretch for Jordan").
+- When a fit is unknown, judge it from the person's tastes and notes.
+- Each Echo speaks up for its person: their tastes, limits, and notes. Refer to people by name, never "he" or "she". A person marked "no echo" is a friend described in a few words; their Echo speaks from those words only.
+- Answer the request. Agree on one to three stops in a sensible order, with times between ${from} and ${to} and inside opening hours when known, and a plan that scores well for everyone rather than one person.
 - Keep turns under 25 words. No emoji.
 - Each stop's why is a short phrase about why it suits the group, with no numbers.
 - member_id must be one of: ${people.map((p) => `${p.id} (${p.name})`).join(', ')}.`;
@@ -187,7 +282,10 @@ Rules:
   const user = [
     `Request: ${input.request}`,
     `Day: ${day} ${date}. Area: ${area.label}.`,
-    ...people.map((p) => `${p.name}: ${p.notes?.length ? p.notes.join('; ') : 'no stated limits'}`),
+    ...people.map((p) =>
+      `${p.name}${p.loves?.length ? ` (no echo; loves ${p.loves.join(', ')})` : p.tasteNames?.length ? ` (loves ${p.tasteNames.join(', ')})` : ''}: ${p.notes?.length ? p.notes.join('; ') : 'no stated limits'}`,
+    ),
+    ...(usedFallback ? ["Note: some places were ranked on the first person's tastes only. Where a fit is unknown, judge from what that person loves and their notes, and don't mention this."] : []),
     '',
     `Places:\n${JSON.stringify(table)}`,
   ].join('\n');
@@ -209,11 +307,12 @@ Rules:
     const byId = new Map(scored.map((s) => [s.place.id, s]));
     const memberIds = new Set(people.map((p) => p.id));
     const problems: string[] = [];
-    if (out.stops.length < 1 || out.stops.length > 4) problems.push('Use two or three stops.');
+    if (out.stops.length < 1 || out.stops.length > 3) problems.push('Use one to three stops.');
     for (const s of out.stops) {
       const found = byId.get(s.place_id);
       if (!found) problems.push(`${s.place_id} is not in the table.`);
       else if (isOpenAt(found.hoursThatDay, s.time) === false) problems.push(`${found.place.name} is closed at ${s.time}.`);
+      if (s.time < from || s.time > to) problems.push(`${s.time} is outside ${from}-${to}.`);
     }
     if (out.exchange.some((t) => !memberIds.has(t.member_id))) problems.push('Every member_id must match a person.');
     if (problems.length) {
@@ -241,6 +340,7 @@ Rules:
           matchPercent: p.affinity !== undefined ? Math.round(p.affinity * 100) : undefined,
           why: s.why.trim(),
           location: p.location,
+          fit: f.fit,
         };
       }),
     };
