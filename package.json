@@ -1,0 +1,23 @@
+{
+  "name": "echo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Voice-first taste agent built on the Qloo taste graph",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "qloo:probe": "node --env-file-if-exists=.env.local scripts/qloo-probe.mjs",
+    "qloo:seed": "tsx scripts/seed-qloo-cache.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
