@@ -17,7 +17,7 @@ export const DAILY_LIMITS = {
   geo: 40,
   picker: 40,
   covers: 40,
-  speak: 80,
+  speak: 200,
 } as const;
 
 export type UsageKind = keyof typeof DAILY_LIMITS;

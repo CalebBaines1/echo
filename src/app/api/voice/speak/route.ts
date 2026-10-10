@@ -14,14 +14,13 @@ const Body = z.object({ text: z.string().trim().min(1).max(MAX_SPEECH_CHARS) });
  */
 export async function POST(req: Request) {
   if (!ttsConfigured()) return NextResponse.json({ error: 'Neural voice is off.' }, { status: 503 });
-  const caller = await guard(req, 'speak');
-  if (caller instanceof Response) return caller;
-
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Nothing to say.' }, { status: 400 });
-  if (!(await voiceBudgetAllows(speechCost(parsed.data.text)))) {
-    return NextResponse.json({ error: "Today's voice budget is used." }, { status: 503 });
-  }
+
+  // Both checks at once: every bit of latency here delays the first word.
+  const [caller, affordable] = await Promise.all([guard(req, 'speak'), voiceBudgetAllows(speechCost(parsed.data.text))]);
+  if (caller instanceof Response) return caller;
+  if (!affordable) return NextResponse.json({ error: "Today's voice budget is used." }, { status: 503 });
   try {
     const audio = await synthesize(parsed.data.text);
     return new Response(audio, { headers: { 'content-type': 'audio/mpeg', 'cache-control': 'private, max-age=86400' } });

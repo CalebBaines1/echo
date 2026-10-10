@@ -50,8 +50,11 @@ async function recordVoiceSpend(cost: number) {
 const recent = new Map<string, ArrayBuffer>();
 const RECENT_MAX = 40;
 
-/** Speaks text as MP3. Throws if the API call fails. */
-export async function synthesize(text: string): Promise<ArrayBuffer> {
+/**
+ * Speaks text as an MP3 stream, passed through as OpenAI produces it so
+ * playback can start early. The finished clip is kept for replays.
+ */
+export async function synthesize(text: string): Promise<ReadableStream<Uint8Array> | ArrayBuffer> {
   const voice = process.env.VOICE_NAME?.trim() || 'coral';
   const key = `${voice}:${text}`;
   const hit = recent.get(key);
@@ -62,11 +65,16 @@ export async function synthesize(text: string): Promise<ArrayBuffer> {
     headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY!.trim()}`, 'content-type': 'application/json' },
     body: JSON.stringify({ model: MODEL, voice, input: text, instructions: INSTRUCTIONS, response_format: 'mp3' }),
   });
-  if (!res.ok) throw new Error(`Speech failed with ${res.status}`);
-  const audio = await res.arrayBuffer();
-  await recordVoiceSpend(speechCost(text));
+  if (!res.ok || !res.body) throw new Error(`Speech failed with ${res.status}`);
+  void recordVoiceSpend(speechCost(text));
 
-  recent.set(key, audio);
-  if (recent.size > RECENT_MAX) recent.delete(recent.keys().next().value!);
-  return audio;
+  const [forClient, forCache] = res.body.tee();
+  void new Response(forCache).arrayBuffer().then(
+    (audio) => {
+      recent.set(key, audio);
+      if (recent.size > RECENT_MAX) recent.delete(recent.keys().next().value!);
+    },
+    () => {},
+  );
+  return forClient;
 }
