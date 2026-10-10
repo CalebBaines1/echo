@@ -30,6 +30,7 @@ const Body = z.object({
     )
     .max(60),
   activities: z.array(z.object({ name: z.string().max(100), status: z.enum(['does', 'used_to', 'wants_to']), hobbyId: z.string().optional() })).max(30),
+  exclude: z.array(z.string().max(80)).max(200).default([]),
   preferences: z.object({
     company: z.enum(['solo', 'group', 'either']).optional(),
     setting: z.enum(['indoor', 'outdoor', 'either']).optional(),

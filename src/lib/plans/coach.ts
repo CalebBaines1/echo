@@ -47,6 +47,13 @@ export async function writeHobbyPlan(
   return { intro: out.intro.trim(), weeks: out.weeks.slice(0, 6).map((w) => ({ week: w.week.trim(), title: w.title.trim(), detail: w.detail.trim() })) };
 }
 
+const OUTCOME_WORDS: Record<string, string> = {
+  loved: 'They loved it.',
+  fine: 'It was fine.',
+  skipped: "They didn't go. Suggest something easier to start or at a better time, not a repeat.",
+  wrong: 'It was wrong for them. Suggest a different direction, not more of the same.',
+};
+
 const CheckInSchema = z.object({
   reply: z.string().describe('One or two warm sentences reacting to what they said.'),
   learned: z.array(z.string()).describe('Up to three short things learned about their preferences, phrased like "prefers open studio over classes".'),
@@ -54,7 +61,7 @@ const CheckInSchema = z.object({
 });
 
 export async function runCheckIn(
-  input: { planTitle: string; stops: string[]; answer: string; knownNotes: string[] },
+  input: { planTitle: string; stops: string[]; answer: string; knownNotes: string[]; outcome?: string },
   model: Parse,
 ): Promise<{ reply: string; learned: string[]; suggestion?: string }> {
   const res = await model.parse({
@@ -65,7 +72,7 @@ export async function runCheckIn(
     messages: [
       {
         role: 'user',
-        content: `Plan: ${input.planTitle} (${input.stops.join(', ')})\nTheir notes so far: ${input.knownNotes.join('; ') || 'none'}\nHow it went, in their words: ${input.answer}`,
+        content: `Plan: ${input.planTitle} (${input.stops.join(', ')})\nTheir notes so far: ${input.knownNotes.join('; ') || 'none'}\n${input.outcome ? `${OUTCOME_WORDS[input.outcome] ?? ''}\n` : ''}How it went, in their words: ${input.answer}`,
       },
     ],
     output_config: { effort: 'low', format: zodOutputFormat(CheckInSchema) },
@@ -76,5 +83,44 @@ export async function runCheckIn(
     reply: out.reply.trim(),
     learned: out.learned.map((l) => l.trim()).filter(Boolean).slice(0, 3),
     suggestion: out.next_request?.trim() || undefined,
+  };
+}
+
+const AdaptSchema = z.object({
+  reply: z.string().describe('One warm sentence reacting to how the step went.'),
+  remaining: z.array(z.object({ title: z.string(), detail: z.string() })).describe('The steps after the one just finished, revised. Same count as before.'),
+  learned: z.string().nullable().describe('One short preference this reveals, like "prefers open studio over classes", or null.'),
+});
+
+/** Revises the rest of a hobby plan after one step, based on how it went. */
+export async function adaptHobbyPlan(
+  input: { hobby: string; weeks: HobbyWeek[]; index: number; note: string },
+  model: Parse,
+): Promise<{ reply: string; weeks: HobbyWeek[]; learned?: string }> {
+  const remaining = input.weeks.slice(input.index + 1);
+  const res = await model.parse({
+    model: MODELS.coach,
+    max_tokens: 2500,
+    system: `You adjust a six-week hobby plan after each step. Keep the same number of remaining steps. Change only what the person's answer gives a reason to change: if it was too hard, ease in; if a place didn't suit them, say "Echo will find a different [kind of place]"; if it went well, build on it. Never invent places, classes, schedules or prices. Titles stay short; details under 15 words.`,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          `Hobby: ${input.hobby}`,
+          `Just finished: ${input.weeks[input.index]?.title} (${input.weeks[input.index]?.detail})`,
+          `How it went, in their words: ${input.note}`,
+          `Remaining steps:\n${remaining.map((w, i) => `${i + 1}. ${w.title}: ${w.detail}`).join('\n') || '(none)'}`,
+        ].join('\n'),
+      },
+    ],
+    output_config: { effort: 'low', format: zodOutputFormat(AdaptSchema) },
+  });
+  const out = res.stop_reason === 'refusal' ? null : res.parsed_output;
+  const done = input.weeks.map((w, i) => (i === input.index ? { ...w, done: true, note: input.note } : w));
+  if (!out || out.remaining.length !== remaining.length) return { reply: 'Nice. On to the next one.', weeks: done };
+  return {
+    reply: out.reply.trim(),
+    learned: out.learned?.trim() || undefined,
+    weeks: done.map((w, i) => (i > input.index ? { ...w, title: out.remaining[i - input.index - 1]!.title.trim(), detail: out.remaining[i - input.index - 1]!.detail.trim() } : w)),
   };
 }

@@ -34,6 +34,7 @@ export interface TastePick {
   name: string;
   type: string;
   year?: number;
+  image?: string;
   /** "Because you like Severance and Past Lives". */
   reason?: string;
 }
@@ -55,6 +56,22 @@ export interface EchoProfile {
   leanings?: Leaning[];
   alsoLove?: TastePick[];
   builtAt?: number;
+  /** What the profile was last built from, to rebuild when tastes change. */
+  builtFrom?: string;
+  /** Traits the person said fit them. */
+  confirmedTraits?: string[];
+  /** Picks the person skipped; never suggested again. */
+  skippedPicks?: string[];
+}
+
+/** A short signature of what a profile build depends on. */
+export function buildSignature(p: Pick<EchoProfile, 'tastes' | 'activities' | 'preferences' | 'skippedPicks'>): string {
+  return [
+    p.tastes.map((t) => t.entity?.id ?? t.key).sort().join(','),
+    p.activities.map((a) => `${a.name}:${a.status}`).sort().join(','),
+    p.preferences.notes.length,
+    (p.skippedPicks ?? []).length,
+  ].join('|');
 }
 
 export const SAMPLE_AREA: Area = { label: 'Lower Manhattan (sample)', lat: 40.7226, lon: -73.9982, sample: true };

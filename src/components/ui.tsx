@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { ComponentProps, ReactNode } from 'react';
-import { ArrowLeftIcon, HomeIcon, PlugIcon, UsersIcon, WaveIcon } from './icons';
+import { ArrowLeftIcon, HomeIcon, UsersIcon, WaveIcon } from './icons';
 
 export function buttonClass(kind: 'primary' | 'secondary' = 'secondary', extra = '') {
   const base =
@@ -59,7 +59,6 @@ const TABS = [
   { href: '/home', label: 'Home', Icon: HomeIcon },
   { href: '/echo', label: 'Your echo', Icon: WaveIcon },
   { href: '/friends', label: 'Friends', Icon: UsersIcon },
-  { href: '/ai', label: 'Use with AI', Icon: PlugIcon },
 ] as const;
 
 /** Bottom navigation for the main screens. */

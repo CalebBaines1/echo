@@ -12,6 +12,7 @@ const Body = z.object({
   stops: z.array(z.string().max(200)).max(6),
   answer: z.string().trim().min(1).max(800),
   knownNotes: z.array(z.string().max(120)).max(30),
+  outcome: z.enum(['loved', 'fine', 'skipped', 'wrong']).optional(),
 });
 
 export async function POST(req: Request) {

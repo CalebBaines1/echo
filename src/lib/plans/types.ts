@@ -116,6 +116,8 @@ export interface Plan {
   status: 'proposed' | 'approved' | 'done';
   hobbyId?: string;
   hobbyWeeks?: HobbyWeek[];
+  /** Echo's line at the top of the hobby plan. */
+  hobbyIntro?: string;
   group?: { members: GroupMember[]; exchange: GroupTurn[]; approvals: Record<string, boolean> };
   checkIn?: CheckIn;
   /** A public link friends can open and respond to. */

@@ -64,12 +64,12 @@ export interface BuiltProfile {
 }
 
 export async function buildProfile(
-  input: { tastes: HeardTaste[]; activities: Activity[]; preferences: Preferences },
+  input: { tastes: HeardTaste[]; activities: Activity[]; preferences: Preferences; exclude?: string[] },
   deps: { qloo: Pick<QlooClient, 'recommend'>; model: Pick<Anthropic['messages'], 'parse'> },
 ): Promise<BuiltProfile> {
   const ids = signalIds(input.tastes);
   const names = new Map(input.tastes.flatMap((t) => (t.entity ? [[t.entity.id, t.entity.name] as const] : [])));
-  const known = new Set(ids);
+  const known = new Set([...ids, ...(input.exclude ?? [])]);
 
   let qlooUnavailable = false;
   const byType = await Promise.all(
@@ -88,7 +88,7 @@ export async function buildProfile(
   const alsoLove: TastePick[] = [];
   PICK_TYPES.forEach(([, count], i) => {
     for (const item of (byType[i] ?? []).filter((m) => !known.has(m.id)).slice(0, count)) {
-      alsoLove.push({ id: item.id, name: item.name, type: String(item.type), year: item.year, reason: reasonFor(item, names) });
+      alsoLove.push({ id: item.id, name: item.name, type: String(item.type), year: item.year, image: item.image, reason: reasonFor(item, names) });
     }
   });
   const leanings = leaningsFrom(byType.flat());

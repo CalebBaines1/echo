@@ -21,6 +21,9 @@ export function MissionRun() {
   const moods = (params.get('moods') ?? '').split(',').filter(Boolean);
   const replaceId = params.get('replace') ?? undefined;
   const proposal = params.get('proposal') === '1';
+  // A mission launched from a hobby plan step links back to it.
+  const hobbyPlanId = params.get('hobby');
+  const hobbyStep = Number(params.get('step'));
 
   const [steps, setSteps] = useState<Step[]>([]);
   const [cards, setCards] = useState<PlaceCard[]>([]);
@@ -92,6 +95,10 @@ export function MissionRun() {
               proposal,
             });
             savePlan(plan);
+            const parent = hobbyPlanId ? getPlan(hobbyPlanId) : undefined;
+            if (parent?.hobbyWeeks?.[hobbyStep]) {
+              savePlan({ ...parent, hobbyWeeks: parent.hobbyWeeks.map((w, i) => (i === hobbyStep ? { ...w, planId: plan.id } : w)) });
+            }
             setPicked(new Set([...e.plan.stops.map((s) => s.placeId)]));
             setPlanId(plan.id);
           } else if (e.type === 'error') {

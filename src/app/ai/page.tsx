@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { Button, Label, LinkButton, TabBar } from '@/components/ui';
+import { BackHeader, Button, Label, LinkButton } from '@/components/ui';
 import { profileAsPrompt } from '@/lib/profile/prompt';
 import { loadProfile, useStored } from '@/lib/store';
 
@@ -38,7 +38,7 @@ export default function UseWithAiPage() {
 
   return (
     <main className="flex flex-1 flex-col gap-3">
-      <h1 className="text-lg font-bold">Use with AI</h1>
+      <BackHeader href="/echo">Use with AI</BackHeader>
       <p className="text-sm text-muted">Give any AI assistant your taste, so you never have to explain it again.</p>
 
       <Label>Your echo as a prompt</Label>
@@ -76,7 +76,6 @@ export default function UseWithAiPage() {
         <p className="text-[0.9rem] font-bold">Connect as an MCP server</p>
         <p className="text-sm text-muted">Coming soon: let Claude and other assistants ask Echo for recommendations directly, with access you can revoke.</p>
       </div>
-      <TabBar current="/ai" />
     </main>
   );
 }
