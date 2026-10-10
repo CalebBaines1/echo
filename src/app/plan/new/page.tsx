@@ -11,6 +11,7 @@ import { suggestedRequests } from '@/lib/plans/suggest';
 import { defaultWhen, parseWhen, type When } from '@/lib/plans/when';
 import { listenOnce, speechSupport, type Listening } from '@/lib/speech/browser-speech';
 import { loadProfile, useStored } from '@/lib/store';
+import { markSpokeToEcho } from '@/lib/voice/say';
 
 const MOODS: Array<{ id: string; label: string }> = [
   { id: 'quiet', label: 'Quiet' },
@@ -68,7 +69,10 @@ function NewPlan() {
     listenRef.current = l;
     try {
       const text = await l.result;
-      if (text) setRequest(text);
+      if (text) {
+        markSpokeToEcho();
+        setRequest(text);
+      }
     } catch {
       setNotice("Couldn't use the microphone. Type your request instead.");
     } finally {

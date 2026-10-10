@@ -8,13 +8,14 @@ import { CalendarIcon, CheckIcon, LinkIcon, SendIcon, XIcon } from '@/components
 import { ShareLink } from '@/components/share-link';
 import { StepList } from '@/components/steps';
 import { StopCard } from '@/components/stop-card';
-import { BackHeader, Button, Card, Label, LinkButton, Voice } from '@/components/ui';
+import { BackHeader, Button, Card, Label, LinkButton } from '@/components/ui';
 import { googleCalendarUrl, runUrl } from '@/lib/plans/client';
 import { buildIcs, downloadIcs } from '@/lib/plans/ics';
 import { formatTime, localDate } from '@/lib/plans/time';
 import type { Plan, PlanAction } from '@/lib/plans/types';
 import { whenLabel } from '@/lib/plans/when';
 import { getPlan, savePlan, useStored } from '@/lib/store';
+import { Spoken } from '@/components/spoken';
 
 const QUICK_CHANGES = ['Somewhere closer', 'A different time', 'Cheaper', 'Something quieter'];
 
@@ -114,7 +115,7 @@ export default function PlanPage() {
       <BackHeader href="/home" right={when ? <span className="text-xs text-faint">{whenLabel(when)}</span> : undefined}>
         {plan.title}
       </BackHeader>
-      <Voice>{plan.summary}</Voice>
+      <Spoken text={plan.summary} auto />
 
       {past && !plan.checkIn && (
         <Link href={`/plan/${plan.id}/checkin`} className="rounded-2xl border-2 border-accent bg-accent-soft px-3.5 py-3 text-sm font-bold text-accent-text">

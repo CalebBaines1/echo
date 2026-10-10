@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckIcon } from '@/components/icons';
-import { BackHeader, Button, Label, Spinner, Voice } from '@/components/ui';
+import { BackHeader, Button, Label, Spinner } from '@/components/ui';
 import { runUrl } from '@/lib/plans/client';
 import { countdown } from '@/lib/plans/run-mission';
 import { localDate } from '@/lib/plans/time';
@@ -13,6 +13,7 @@ import { parseDate } from '@/lib/plans/when';
 import { hobbyById } from '@/lib/qloo/tags';
 import { getPlan, loadProfile, savePlan, saveProfile, useStored } from '@/lib/store';
 import { apiFetch } from '@/lib/supabase/browser';
+import { Spoken } from '@/components/spoken';
 
 const QUICK = ['Loved it', 'It was fine', 'Too hard', "Didn't go"];
 
@@ -127,7 +128,7 @@ export default function HobbyPlanPage() {
         {hobby}
       </BackHeader>
       {busy && !weeks.length && <Spinner label="Writing your plan…" />}
-      {(reply ?? intro ?? plan.hobbyIntro) && <Voice>{reply ?? intro ?? plan.hobbyIntro}</Voice>}
+      {(reply ?? intro ?? plan.hobbyIntro) && <Spoken text={(reply ?? intro ?? plan.hobbyIntro)!} auto />}
       {error && (
         <div className="flex flex-col gap-2">
           <p role="status" className="text-sm text-warn">

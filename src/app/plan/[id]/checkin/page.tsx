@@ -10,6 +10,8 @@ import { defaultWhen, parseWhen } from '@/lib/plans/when';
 import { listenOnce, speechSupport, type Listening } from '@/lib/speech/browser-speech';
 import { getPlan, loadProfile, savePlan, saveProfile, useStored } from '@/lib/store';
 import { apiFetch } from '@/lib/supabase/browser';
+import { Spoken } from '@/components/spoken';
+import { markSpokeToEcho } from '@/lib/voice/say';
 
 const OUTCOMES: Array<{ id: Outcome; label: string }> = [
   { id: 'loved', label: 'Loved it' },
@@ -48,7 +50,10 @@ export default function CheckInPage() {
     listenRef.current = l;
     try {
       const text = await l.result;
-      if (text) setAnswer(text);
+      if (text) {
+        markSpokeToEcho();
+        setAnswer(text);
+      }
     } catch {
       setError("Couldn't use the microphone. Type your answer instead.");
     } finally {
@@ -103,7 +108,7 @@ export default function CheckInPage() {
             </section>
           )}
           <p className="max-w-[86%] self-end rounded-2xl rounded-br-sm bg-sunk px-3 py-2 text-[0.9rem]">{done.answer}</p>
-          <Voice>{done.reply}</Voice>
+          <Spoken text={done.reply} auto />
           {done.learned.length > 0 && (
             <ul className="flex flex-col gap-2 border-t border-line pt-3">
               {done.learned.map((l) => (

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DevTools } from '@/components/dev-tools';
 import { CheckIcon, PlugIcon, SendIcon, XIcon } from '@/components/icons';
-import { Button, Chip, Label, LinkButton, Spinner, TabBar, Voice, Why } from '@/components/ui';
+import { Button, Chip, Label, LinkButton, Spinner, TabBar, Why } from '@/components/ui';
 import { pendingInvite } from '@/lib/invites';
 import { tasteKey } from '@/lib/onboarding/resolve';
 import type { MentionType } from '@/lib/onboarding/types';
@@ -14,6 +14,7 @@ import { shareTasteCard } from '@/lib/profile/taste-card';
 import { buildSignature, type EchoProfile, type TastePick } from '@/lib/profile/types';
 import { loadPlans, loadProfile, saveProfile, useStored } from '@/lib/store';
 import { apiFetch } from '@/lib/supabase/browser';
+import { Spoken } from '@/components/spoken';
 
 const TYPE_LABEL: Record<string, string> = {
   tv_show: 'TV',
@@ -160,7 +161,7 @@ export function EchoProfileScreen() {
         </button>
       </header>
 
-      {building && !p.summary ? <Spinner label="Building your echo…" /> : p.summary ? <Voice className="text-[1.25rem]">{p.summary}</Voice> : null}
+      {building && !p.summary ? <Spinner label="Building your echo…" /> : p.summary ? <Spoken text={p.summary} className="text-[1.25rem]" /> : null}
       {building && p.summary && <Spinner label="Refreshing with your latest tastes…" />}
 
       {error && (

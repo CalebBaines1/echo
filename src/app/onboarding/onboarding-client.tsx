@@ -15,6 +15,8 @@ import { listenOnce, speechSupport, type Listening } from '@/lib/speech/browser-
 import { loadProfile, saveProfile } from '@/lib/store';
 import { apiFetch } from '@/lib/supabase/browser';
 import { Review } from './review';
+import { Spoken } from '@/components/spoken';
+import { markSpokeToEcho } from '@/lib/voice/say';
 
 type Step = 'pick' | 'open' | 'activities' | 'prefs' | 'area' | 'review';
 const STEPS: Step[] = ['pick', 'open', 'activities', 'prefs', 'area', 'review'];
@@ -341,7 +343,10 @@ function OpenStep({ known, added, onAdd, onNext }: { known: string[]; added: Hea
     listenRef.current = l;
     try {
       const said = await l.result;
-      if (said) await send(said);
+      if (said) {
+        markSpokeToEcho();
+        await send(said);
+      }
     } catch {
       setError("Couldn't use the microphone. Type it instead.");
     } finally {
@@ -392,7 +397,7 @@ function OpenStep({ known, added, onAdd, onNext }: { known: string[]; added: Hea
           {error}
         </p>
       )}
-      {reply && <Voice>{reply}</Voice>}
+      {reply && <Spoken text={reply} auto />}
       {added.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {added.map((t) => (

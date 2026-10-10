@@ -17,6 +17,7 @@ export const DAILY_LIMITS = {
   geo: 40,
   picker: 40,
   covers: 40,
+  speak: 80,
 } as const;
 
 export type UsageKind = keyof typeof DAILY_LIMITS;
@@ -39,6 +40,7 @@ const COST_ESTIMATE: Record<UsageKind, number> = {
   geo: 0,
   picker: 0,
   covers: 0,
+  speak: 0,
 };
 
 const BUDGET_MESSAGE = "Echo has used today's budget. It resets at midnight UTC.";

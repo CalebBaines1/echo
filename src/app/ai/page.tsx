@@ -72,10 +72,6 @@ export default function UseWithAiPage() {
         <input type="checkbox" checked={includePicks} onChange={(e) => setIncludePicks(e.target.checked)} className="size-4 accent-accent" />
       </label>
 
-      <div className="rounded-2xl border border-dashed border-line px-3.5 py-3">
-        <p className="text-[0.9rem] font-bold">Connect as an MCP server</p>
-        <p className="text-sm text-muted">Coming soon: let Claude and other assistants ask Echo for recommendations directly, with access you can revoke.</p>
-      </div>
     </main>
   );
 }

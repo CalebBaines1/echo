@@ -14,6 +14,7 @@ import type { Plan } from '@/lib/plans/types';
 import { defaultWhen, parseWhen, whenLabel } from '@/lib/plans/when';
 import { listenOnce, speechSupport, type Listening } from '@/lib/speech/browser-speech';
 import { loadPlans, loadProfile, useStored } from '@/lib/store';
+import { markSpokeToEcho } from '@/lib/voice/say';
 
 /** Plans past their date that nobody has said anything about yet. */
 function waitingCheckIn(p: Plan, today: string) {
@@ -67,6 +68,7 @@ function Home() {
     listenRef.current = l;
     try {
       const text = (await l.result).trim();
+      if (text) markSpokeToEcho();
       if (text) router.push(runUrl({ request: text, mode: 'hobby', when: parseWhen(text) ?? defaultWhen('hobby') }));
       else setNotice("I didn't catch that. Tap the mic and try again.");
     } catch {

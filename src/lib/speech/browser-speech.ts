@@ -206,15 +206,21 @@ export function listenOnce(opts: ListenOptions): Listening {
   };
 }
 
-const PREFERRED_VOICES = ['Samantha', 'Google US English', 'Microsoft Aria', 'Microsoft Jenny', 'Ava', 'Allison', 'Karen'];
+// Fallback when neural speech is off. Higher-quality voices first: Edge's
+// "Natural" voices, Apple's downloaded Premium/Enhanced voices, then the usual defaults.
+const PREFERRED_VOICES = [/natural/i, /premium/i, /enhanced/i, /neural/i, /Google US English/, /Samantha/, /Microsoft (Aria|Jenny)/, /Ava|Allison|Karen/];
+
+let chosen: SpeechSynthesisVoice | undefined;
 
 function pickVoice(): SpeechSynthesisVoice | undefined {
-  const voices = window.speechSynthesis.getVoices();
-  for (const name of PREFERRED_VOICES) {
-    const v = voices.find((v) => v.name.includes(name) && v.lang.startsWith('en'));
-    if (v) return v;
+  if (chosen) return chosen;
+  const voices = window.speechSynthesis.getVoices().filter((v) => v.lang.startsWith('en'));
+  const us = (v: SpeechSynthesisVoice) => (v.lang === 'en-US' ? 0 : 1);
+  for (const re of PREFERRED_VOICES) {
+    const v = voices.filter((v) => re.test(v.name)).sort((a, b) => us(a) - us(b))[0];
+    if (v) return (chosen = v);
   }
-  return voices.find((v) => v.lang === 'en-US') ?? voices.find((v) => v.lang.startsWith('en'));
+  return voices.find((v) => v.lang === 'en-US') ?? voices[0];
 }
 
 /** Loads the voice list early; some browsers fill it in asynchronously. */
@@ -233,7 +239,7 @@ export function speak(text: string): Promise<void> {
     const u = new SpeechSynthesisUtterance(text);
     const voice = pickVoice();
     if (voice) u.voice = voice;
-    u.rate = 1.03;
+    u.rate = 1;
     let finished = false;
     const finish = () => {
       if (finished) return;
