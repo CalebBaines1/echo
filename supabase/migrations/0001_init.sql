@@ -73,6 +73,17 @@ create table public.usage_daily (
 );
 
 -- ---------------------------------------------------------------------------
+-- Table access. Explicit, so this works whether or not the project exposes
+-- new tables automatically. RLS below decides which rows each user sees.
+
+revoke all on public.profiles, public.plans, public.groups, public.group_members,
+  public.qloo_cache, public.qloo_budget, public.usage_daily from anon, authenticated;
+grant select, insert, update, delete on public.profiles, public.plans to authenticated;
+grant select, delete on public.groups, public.group_members to authenticated;
+grant all on public.profiles, public.plans, public.groups, public.group_members,
+  public.qloo_cache, public.qloo_budget, public.usage_daily to service_role;
+
+-- ---------------------------------------------------------------------------
 -- Row level security
 
 alter table public.profiles enable row level security;
