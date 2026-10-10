@@ -1,8 +1,15 @@
 // Supabase settings. Both the newer key names (publishable/secret) and the
 // older ones (anon/service role) are accepted.
 
+/** The project URL. Tolerates a pasted API URL such as ".../rest/v1/" by keeping only the origin. */
 export function supabaseUrl(): string | undefined {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || undefined;
+  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  if (!raw) return undefined;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return raw;
+  }
 }
 
 export function supabasePublicKey(): string | undefined {

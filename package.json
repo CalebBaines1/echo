@@ -18,6 +18,7 @@
     "qloo:seed": "tsx scripts/seed-qloo-cache.ts",
     "qloo:seed:db": "tsx --env-file-if-exists=.env.local scripts/seed-qloo-cache.ts --db",
     "db:migrate": "tsx --env-file-if-exists=.env.local scripts/db-migrate.ts",
+    "db:check": "tsx --env-file-if-exists=.env.local scripts/db-check.ts",
     "claude:check": "tsx --env-file-if-exists=.env.local scripts/claude-check.ts"
   },
   "devDependencies": {

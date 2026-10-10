@@ -11,7 +11,22 @@ if (!url) {
   process.exit(1);
 }
 
-const client = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
+/**
+ * Passwords copied from Supabase often contain characters like # or ? that
+ * aren't valid in a URL. Escape the password part if the URL doesn't parse.
+ */
+function normalize(raw: string): string {
+  try {
+    new URL(raw);
+    return raw;
+  } catch {
+    const m = raw.match(/^(postgres(?:ql)?:\/\/)([^:]+):(.*)@([^@]+)$/);
+    if (!m) throw new Error('SUPABASE_DB_URL is not a valid connection string.');
+    return `${m[1]}${m[2]}:${encodeURIComponent(m[3]!)}@${m[4]}`;
+  }
+}
+
+const client = new pg.Client({ connectionString: normalize(url), ssl: { rejectUnauthorized: false } });
 await client.connect();
 try {
   await client.query(`create table if not exists public._migrations (name text primary key, applied_at timestamptz not null default now())`);
