@@ -1,0 +1,96 @@
+@import 'tailwindcss';
+
+/* Echo palette, matching the prototype. Light first, dark via system setting. */
+:root {
+  --bg: #eef0f5;
+  --surface: #ffffff;
+  --sunk: #f4f5f9;
+  --ink: #17182b;
+  --muted: #5d6079;
+  --faint: #8a8da3;
+  --line: #dadde7;
+  --accent: #3b38c2;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6e5fb;
+  --accent-text: #2b2896;
+  --echo: #0e6f5e;
+  --echo-soft: #dcf1eb;
+  --warn: #9a4320;
+  --warn-soft: #f8e7dd;
+  --friend: #8a3a62;
+  --friend-soft: #f7e4ee;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1018;
+    --surface: #191a26;
+    --sunk: #21232f;
+    --ink: #ecedf5;
+    --muted: #a1a4ba;
+    --faint: #7c7f96;
+    --line: #2d3040;
+    --accent: #9e9bff;
+    --accent-ink: #14133a;
+    --accent-soft: #2a2862;
+    --accent-text: #c9c7ff;
+    --echo: #62d2ba;
+    --echo-soft: #12372f;
+    --warn: #f2a47e;
+    --warn-soft: #3b2419;
+    --friend: #f0a6c8;
+    --friend-soft: #3a1c2b;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunk: var(--sunk);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+  --color-echo: var(--echo);
+  --color-echo-soft: var(--echo-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-friend: var(--friend);
+  --color-friend-soft: var(--friend-soft);
+
+  --font-sans: var(--font-manrope), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-voice: var(--font-newsreader), Georgia, 'Times New Roman', serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, Menlo, monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -4,4 +4,7 @@ node_modules/
 .env*.local
 results/
 .cache/
+next-env.d.ts
+*.tsbuildinfo
+.vercel
 .DS_Store

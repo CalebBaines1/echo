@@ -6,7 +6,22 @@ Built for the Qloo Agentic Hackathon.
 
 ## Status
 
-Pre-build. The first step is validating Qloo's data for Echo's use cases.
+In development. Next.js app shell and Qloo client are in place; voice onboarding is next.
+
+## Run locally
+
+Requires Node 22 or later.
+
+```bash
+npm install
+cp .env.local.example .env.local   # add your QLOO_API_KEY
+npm run qloo:seed                  # optional: load saved Qloo responses for offline work
+npm run dev
+```
+
+Open http://localhost:3000. `GET /api/health` reports whether Qloo live calls are on (they're off unless `QLOO_LIVE=1`).
+
+Stack: Next.js 16 (App Router), React 19, Tailwind CSS 4, TypeScript.
 
 ## Qloo probe
 
