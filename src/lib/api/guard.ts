@@ -1,5 +1,6 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
+import { budgetAllows } from '@/lib/ai/spend';
 import { getSupabaseAdmin, getSupabaseVerifier } from '@/lib/supabase/admin';
 import { supabaseConfigured } from '@/lib/supabase/config';
 
@@ -18,6 +19,25 @@ export const DAILY_LIMITS = {
 export type UsageKind = keyof typeof DAILY_LIMITS;
 
 /**
+ * Upper estimate of Claude cost per request, in dollars: about 2-3x what was
+ * measured on Oct 10, 2026 (onboarding turn $0.0003, profile build $0.0001,
+ * mission $0.022). A request only starts if this fits in what's left of the
+ * global daily budget; the actual cost is what gets recorded.
+ */
+const COST_ESTIMATE: Record<UsageKind, number> = {
+  turn: 0.002,
+  resolve: 0,
+  profile: 0.002,
+  mission: 0.06,
+  hobby: 0.005,
+  checkin: 0.002,
+  compare: 0,
+  group: 0.05,
+};
+
+const BUDGET_MESSAGE = "Echo has used today's budget. It resets at midnight UTC.";
+
+/**
  * Checks who's calling and counts the call against their daily limit.
  * Returns the user id, or a response to send back instead.
  *
@@ -28,6 +48,9 @@ export async function guard(req: Request, kind: UsageKind): Promise<{ userId: st
     if (process.env.NODE_ENV === 'production') {
       return NextResponse.json({ error: "Echo isn't fully set up yet." }, { status: 503 });
     }
+    if (COST_ESTIMATE[kind] > 0 && !(await budgetAllows(COST_ESTIMATE[kind]))) {
+      return NextResponse.json({ error: BUDGET_MESSAGE }, { status: 429 });
+    }
     return { userId: 'local-dev' };
   }
 
@@ -36,6 +59,10 @@ export async function guard(req: Request, kind: UsageKind): Promise<{ userId: st
   const { data, error } = token && verifier ? await verifier.auth.getUser(token) : { data: { user: null }, error: null };
   if (error || !data.user) {
     return NextResponse.json({ error: 'Your session expired. Reload the page and try again.' }, { status: 401 });
+  }
+
+  if (COST_ESTIMATE[kind] > 0 && !(await budgetAllows(COST_ESTIMATE[kind]))) {
+    return NextResponse.json({ error: BUDGET_MESSAGE }, { status: 429 });
   }
 
   const admin = getSupabaseAdmin();
