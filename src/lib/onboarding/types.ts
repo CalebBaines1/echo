@@ -1,4 +1,3 @@
-import type { Activity, Preferences } from '@/lib/profile/types';
 import type { EntitySummary } from '@/lib/qloo/types';
 
 /** What the interviewer thinks a mention is. "author" searches people and books. */
@@ -27,22 +26,3 @@ export interface HeardTaste {
   entity?: EntitySummary;
   options?: EntitySummary[];
 }
-
-export interface ChatMessage {
-  role: 'echo' | 'user';
-  text: string;
-}
-
-export interface TurnResponse {
-  reply: string;
-  done: boolean;
-  added: HeardTaste[];
-  activities: Activity[];
-  preferences: Partial<Preferences>;
-}
-
-export const OPENING_LINE =
-  "Hi, I'm Echo. Let's figure out what you love. What's a show or movie you've rewatched more than once?";
-
-/** Most questions Echo asks before wrapping up. */
-export const MAX_QUESTIONS = 10;

@@ -114,6 +114,11 @@ export function normalizeHours(raw: unknown): OpeningHours | undefined {
   return any ? out : undefined;
 }
 
+function imageOf(raw: Raw): string | undefined {
+  const url = raw.properties?.image?.url;
+  return typeof url === 'string' && url.startsWith('https://') ? url : undefined;
+}
+
 export function toEntitySummary(raw: Raw): EntitySummary {
   return {
     id: String(raw.entity_id ?? raw.id ?? ''),
@@ -121,6 +126,7 @@ export function toEntitySummary(raw: Raw): EntitySummary {
     type: entityTypeOf(raw),
     disambiguation: disambiguationOf(raw),
     year: yearOf(raw),
+    image: imageOf(raw),
   };
 }
 
@@ -156,6 +162,7 @@ export function toMediaSummary(raw: Raw): MediaSummary {
     year: yearOf(raw),
     description: text(p.short_description) ?? text(p.description),
     affinity: num(raw.query?.affinity),
+    image: imageOf(raw),
     tags: tagsOf(raw).names,
     tagRefs: (Array.isArray(raw.tags) ? raw.tags : []).flatMap((t: Raw) => {
       const id = t?.id ?? t?.tag_id;

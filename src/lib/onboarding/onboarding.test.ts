@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { extractFromAnswer, type ExtractModel } from './extract';
+import { guessCards } from './picker';
 import { QlooOfflineError } from '@/lib/qloo/errors';
 import type { EntitySummary } from '@/lib/qloo/types';
-import { buildMessages, runInterviewerTurn, type InterviewerModel } from './interviewer';
 import { namesMatch, resolveMention, type EntitySearcher } from './resolve';
-import { OPENING_LINE } from './types';
 
 const ent = (name: string, type: string, extra: Partial<EntitySummary> = {}): EntitySummary => ({ id: `${name}-${type}`, name, type, ...extra });
 
@@ -63,80 +63,52 @@ describe('resolveMention', () => {
   });
 });
 
-describe('buildMessages', () => {
-  it('starts with a user turn, alternates roles, and adds context to the last user turn', () => {
-    const out = buildMessages({
-      messages: [
-        { role: 'echo', text: OPENING_LINE },
-        { role: 'user', text: 'Severance' },
-      ],
-      heard: [{ name: 'Dune', type: 'unknown', status: 'ambiguous' }],
-      activities: [{ name: 'pottery', status: 'wants_to' }],
-      preferences: { company: 'solo', notes: ['prefers quiet places'] },
-    });
-    expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
-    const last = out.at(-1)!.content as string;
-    expect(last).toContain('Severance');
-    expect(last).toContain('Questions asked so far: 1 of 10');
-    expect(last).toContain('pottery (wants_to)');
-    expect(last).toContain('company: solo; prefers quiet places');
-    expect(last).toContain('Dune (unknown, unclear which one)');
-  });
-});
+describe('extractFromAnswer', () => {
+  const model = (parsed: object | null, stop_reason = 'end_turn'): ExtractModel =>
+    ({ parse: vi.fn(async () => ({ parsed_output: parsed, stop_reason })) }) as unknown as ExtractModel;
 
-describe('runInterviewerTurn', () => {
-  function model(parsed: object | null, stop_reason = 'end_turn'): InterviewerModel {
-    return { parse: vi.fn(async () => ({ parsed_output: parsed, stop_reason })) } as unknown as InterviewerModel;
-  }
-
-  it('resolves new mentions and skips ones already heard', async () => {
-    const q = searcher([ent('Bon Iver', 'artist')]);
-    const out = await runInterviewerTurn(
-      {
-        messages: [
-          { role: 'echo', text: OPENING_LINE },
-          { role: 'user', text: 'Phoebe Bridgers and Bon Iver' },
-        ],
-        heard: [{ name: 'Phoebe Bridgers', type: 'artist', status: 'matched' }],
-      },
+  it('resolves new names, skips known ones, and maps activities to hobbies', async () => {
+    const q = searcher([ent('Mitski', 'artist')]);
+    const out = await extractFromAnswer(
+      { text: 'Mitski, and I want to try pottery', known: ['severance|tv_show'] },
       {
         model: model({
-          reply: 'Soft and sad, nice. What about games?',
-          activities: [{ name: 'Pottery', status: 'wants_to' }],
-          preferences: { company: 'solo', setting: null, budget: 40, max_miles: null, notes: [' prefers quiet places '] },
+          reply: 'Mitski, of course.',
           mentions: [
-            { name: 'Phoebe Bridgers', type: 'artist' },
-            { name: 'Bon Iver', type: 'artist' },
-            { name: 'bon iver', type: 'artist' },
+            { name: 'Mitski', type: 'artist' },
+            { name: 'Severance', type: 'tv_show' },
           ],
-          done: false,
+          activities: [{ name: 'pottery', status: 'wants_to' }],
         }),
         qloo: q,
       },
     );
-    expect(out.reply).toBe('Soft and sad, nice. What about games?');
-    expect(out.added.map((a) => a.name)).toEqual(['Bon Iver']);
-    expect(out.activities).toEqual([{ name: 'Pottery', status: 'wants_to', hobbyId: 'pottery' }]);
-    expect(out.preferences).toEqual({ company: 'solo', budget: 40, notes: ['prefers quiet places'] });
-    expect(q.calls).toHaveLength(1);
+    expect(out.reply).toBe('Mitski, of course.');
+    expect(out.added.map((a) => a.name)).toEqual(['Mitski']);
+    expect(out.activities).toEqual([{ name: 'pottery', status: 'wants_to', hobbyId: 'pottery' }]);
   });
 
-  it('re-asks on a refusal instead of failing', async () => {
-    const out = await runInterviewerTurn(
-      { messages: [{ role: 'echo', text: OPENING_LINE }, { role: 'user', text: 'hmm' }], heard: [] },
-      { model: model(null, 'refusal'), qloo: searcher([]) },
-    );
-    expect(out.added).toEqual([]);
-    expect(out.done).toBe(false);
-    expect(out.reply.length).toBeGreaterThan(0);
+  it('adds nothing on a refusal', async () => {
+    const out = await extractFromAnswer({ text: 'hmm', known: [] }, { model: model(null, 'refusal'), qloo: searcher([]) });
+    expect(out).toEqual({ reply: 'Got it.', added: [], activities: [] });
+  });
+});
+
+describe('guessCards', () => {
+  const media = (id: string, type: string) => ({ id, name: `${type}-${id}`, type, tags: [], tagRefs: [], reasons: [{ kind: 'entity' as const, id: 'seed', score: 0.5 }] });
+
+  it('mixes kinds, skips what was already shown, and says why', async () => {
+    const qloo = {
+      recommend: vi.fn(async ({ type }: { type: string }) => (type === 'tv_show' ? [media('t1', 'tv_show'), media('t2', 'tv_show')] : type === 'artist' ? [media('a1', 'artist')] : [])),
+    };
+    const cards = await guessCards(qloo as never, { ids: ['seed'], names: { seed: 'Severance' }, exclude: ['t1'] });
+    expect(cards.map((c) => c.taste.entity?.id)).toEqual(['t2', 'a1']);
+    expect(cards[0]!.reason).toBe('Because you tapped Severance');
+    expect(cards.every((c) => c.guess && c.taste.status === 'matched')).toBe(true);
   });
 
-  it('wraps up at the question limit', async () => {
-    const messages = Array.from({ length: 20 }, (_, i) => ({ role: i % 2 ? ('user' as const) : ('echo' as const), text: `m${i}` }));
-    const out = await runInterviewerTurn(
-      { messages, heard: [] },
-      { model: model({ reply: 'One more?', mentions: [], activities: [], preferences: { company: null, setting: null, budget: null, max_miles: null, notes: [] }, done: false }), qloo: searcher([]) },
-    );
-    expect(out.done).toBe(true);
+  it('returns nothing when Qloo is unreachable', async () => {
+    const qloo = { recommend: vi.fn(async () => Promise.reject(new Error('offline'))) };
+    expect(await guessCards(qloo as never, { ids: ['seed'], names: {}, exclude: [] })).toEqual([]);
   });
 });

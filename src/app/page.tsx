@@ -1,41 +1,43 @@
 import Link from 'next/link';
 import { ContinueLink } from '@/components/continue-link';
-import { MicIcon } from '@/components/icons';
+import { ArrowRightIcon } from '@/components/icons';
 
 export default function WelcomePage() {
   return (
     <main className="flex flex-1 flex-col gap-3">
       <header className="flex items-center justify-between">
         <span className="text-lg font-bold tracking-tight">echo</span>
-        <span className="text-xs text-faint">Step 1 of 2</span>
       </header>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-        <h1 className="font-voice text-[2rem] leading-tight font-medium text-balance">Tell me what you love</h1>
-        <p className="max-w-[30ch] text-sm text-muted">
-          A two-minute chat about music, shows, games, and books. No account needed.
+      <div className="flex flex-1 flex-col justify-center gap-4">
+        <h1 className="font-voice text-[2.4rem] leading-[1.05] font-medium text-balance">Tell Echo what you love. It finds what to do next.</h1>
+        <p className="max-w-[34ch] text-[0.95rem] text-muted">
+          Tap a few favorite shows, songs and games. Echo turns them into real places and plans near you, and checks in after.
         </p>
-
-        <Link
-          href="/onboarding?mode=voice"
-          aria-label="Start talking"
-          className="mt-6 grid size-[88px] place-items-center rounded-full bg-accent text-accent-ink ring-[10px] ring-accent-soft transition-transform active:scale-95"
-        >
-          <MicIcon className="size-9" />
-        </Link>
-        <p className="text-sm text-muted">Tap to start talking</p>
+        <ol className="mt-2 flex flex-col gap-2 text-sm">
+          <li className="flex gap-3">
+            <span className="grid size-6 flex-none place-items-center rounded-full bg-accent-soft text-xs font-bold text-accent-text">1</span>
+            Tap what you love. About a minute.
+          </li>
+          <li className="flex gap-3">
+            <span className="grid size-6 flex-none place-items-center rounded-full bg-accent-soft text-xs font-bold text-accent-text">2</span>
+            See your echo, and what Echo thinks you&apos;ll like.
+          </li>
+          <li className="flex gap-3">
+            <span className="grid size-6 flex-none place-items-center rounded-full bg-accent-soft text-xs font-bold text-accent-text">3</span>
+            Get a real plan for this week. You say yes or no.
+          </li>
+        </ol>
       </div>
 
-      <p className="text-center text-xs text-faint">
-        Only the names of things you mention are kept. Your voice recording isn&apos;t saved.
-      </p>
       <Link
-        href="/onboarding?mode=text"
-        className="rounded-2xl border border-line bg-surface px-4 py-3 text-center text-sm font-bold"
+        href="/onboarding"
+        className="flex items-center justify-center gap-1.5 rounded-2xl border border-accent bg-accent px-4 py-3.5 text-[0.95rem] font-bold text-accent-ink active:scale-[0.98]"
       >
-        Type instead
+        Start <ArrowRightIcon className="size-4" />
       </Link>
       <ContinueLink />
+      <p className="text-center text-xs text-faint">No account needed. Echo never books or sends anything without your OK.</p>
     </main>
   );
 }

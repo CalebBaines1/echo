@@ -2,471 +2,579 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
-import { ArrowLeftIcon, ArrowRightIcon, MicIcon, PauseIcon, SendIcon } from '@/components/icons';
-import { OPENING_LINE, type ChatMessage, type HeardTaste, type TurnResponse } from '@/lib/onboarding/types';
-import { listenOnce, SpeechError, speak, speechSupport, stopSpeaking, warmUpVoices, type Listening } from '@/lib/speech/browser-speech';
-import type { Activity, Preferences } from '@/lib/profile/types';
-import { EMPTY_PREFERENCES, SAMPLE_AREA } from '@/lib/profile/types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ACTIVITY_CHIPS } from '@/data/picker';
+import { AreaPicker } from '@/components/area-picker';
+import { ArrowLeftIcon, CheckIcon, MicIcon } from '@/components/icons';
+import { Button, Chip, Label, Spinner, Voice } from '@/components/ui';
+import type { PickerCard } from '@/lib/onboarding/picker';
+import type { HeardTaste } from '@/lib/onboarding/types';
+import { hobbyIdFor } from '@/lib/profile/activities';
+import { EMPTY_PREFERENCES, SAMPLE_AREA, type Activity, type Area, type Preferences } from '@/lib/profile/types';
+import { listenOnce, speechSupport, type Listening } from '@/lib/speech/browser-speech';
 import { loadProfile, saveProfile } from '@/lib/store';
-import { Review } from './review';
 import { apiFetch } from '@/lib/supabase/browser';
+import { Review } from './review';
 
-type Mode = 'voice' | 'text';
-type Phase = 'start' | 'speaking' | 'listening' | 'thinking' | 'paused' | 'review';
+type Step = 'pick' | 'open' | 'activities' | 'prefs' | 'area' | 'review';
+const STEPS: Step[] = ['pick', 'open', 'activities', 'prefs', 'area', 'review'];
+const TARGET = 8;
+const FIRST_PAGE = 12;
+const GUESS_EVERY = 3;
 
-const STATUS_LABEL: Record<Phase, string> = {
-  start: 'Ready',
-  speaking: 'Echo is talking',
-  listening: 'Listening',
-  thinking: 'Thinking',
-  paused: 'Paused',
-  review: '',
+const TYPE_LABEL: Record<string, string> = {
+  tv_show: 'TV',
+  artist: 'Music',
+  movie: 'Film',
+  book: 'Book',
+  author: 'Author',
+  video_game: 'Game',
+  podcast: 'Podcast',
+  person: 'Person',
+  unknown: '',
 };
 
-export function OnboardingClient({ initialMode }: { initialMode: Mode }) {
+async function post<T>(url: string, body: object): Promise<T> {
+  const res = await apiFetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error ?? 'Something went wrong. Try again.');
+  return data as T;
+}
+
+export function OnboardingClient() {
   const router = useRouter();
-  const [mode, setModeState] = useState<Mode>(initialMode);
-  const [phase, setPhase] = useState<Phase>('start');
-  const [messages, setMessagesState] = useState<ChatMessage[]>([]);
-  const [heard, setHeardState] = useState<HeardTaste[]>([]);
-  const [activities, setActivitiesState] = useState<Activity[]>([]);
-  const [preferences, setPreferencesState] = useState<Preferences>(EMPTY_PREFERENCES);
-  const [freshKeys, setFreshKeys] = useState<Set<string>>(new Set());
-  const [interim, setInterim] = useState('');
-  const [micReady, setMicReady] = useState(false);
-  const [draft, setDraft] = useState('');
+  const [step, setStep] = useState<Step>('pick');
+  const [deck, setDeck] = useState<PickerCard[] | null>(null);
+  const [guesses, setGuesses] = useState<PickerCard[]>([]);
+  const [shown, setShown] = useState(FIRST_PAGE);
+  const [covers, setCovers] = useState<Record<string, string>>({});
+  const [loved, setLoved] = useState<Map<string, HeardTaste>>(new Map());
+  const [extra, setExtra] = useState<HeardTaste[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [preferences, setPreferences] = useState<Preferences>(EMPTY_PREFERENCES);
+  const [area, setArea] = useState<Area>(SAMPLE_AREA);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const guessedAt = useRef(0);
 
-  // Async voice loops read these instead of stale render values.
-  const modeRef = useRef(mode);
-  const messagesRef = useRef(messages);
-  const heardRef = useRef(heard);
-  const activitiesRef = useRef(activities);
-  const preferencesRef = useRef(preferences);
-  const activeRef = useRef(false);
-  const listeningRef = useRef<Listening | null>(null);
-  const emptyTriesRef = useRef(0);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  const setMode = (m: Mode) => {
-    modeRef.current = m;
-    setModeState(m);
-  };
-  const setMessages = (next: ChatMessage[]) => {
-    messagesRef.current = next;
-    setMessagesState(next);
-  };
-  const setHeard = (next: HeardTaste[]) => {
-    heardRef.current = next;
-    setHeardState(next);
-  };
-  const setActivities = (next: Activity[]) => {
-    activitiesRef.current = next;
-    setActivitiesState(next);
-  };
-  const setPreferences = (next: Preferences) => {
-    preferencesRef.current = next;
-    setPreferencesState(next);
-  };
-
+  // Load the starting cards, and anything already in the profile.
   useEffect(() => {
-    warmUpVoices();
-    const s = speechSupport();
-    if (initialMode === 'voice' && !s.listen) {
-      setMode('text');
-      setNotice("This browser can't listen, so let's type instead.");
+    const existing = loadProfile();
+    if (existing) {
+      setLoved(new Map(existing.tastes.map((t) => [t.key, t])));
+      guessedAt.current = existing.tastes.length;
+      setActivities(existing.activities);
+      setPreferences(existing.preferences);
+      setArea(existing.area);
     }
-    return () => {
-      activeRef.current = false;
-      listeningRef.current?.cancel();
-      stopSpeaking();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    post<{ cards: PickerCard[] }>('/api/picker', { action: 'seed' })
+      .then(({ cards }) => setDeck(cards))
+      .catch((err) => {
+        setError((err as Error).message);
+        setDeck([]);
+      });
   }, []);
 
-  // Typing needs no tap to start: show the first question right away.
+  // Fill in covers for cards without a Qloo image.
   useEffect(() => {
-    if (mode === 'text' && phase === 'start' && messagesRef.current.length === 0) {
-      activeRef.current = true;
-      setMessages([{ role: 'echo', text: OPENING_LINE }]);
-      setPhase('listening');
-    }
-  }, [mode, phase]);
+    const all = [...(deck ?? []), ...guesses];
+    const missing = all.filter((c) => !c.image && !(c.key in covers)).slice(0, 40);
+    if (!missing.length) return;
+    setCovers((cv) => ({ ...cv, ...Object.fromEntries(missing.map((m) => [m.key, ''])) }));
+    post<{ covers: Record<string, string> }>('/api/covers', { items: missing.map((c) => ({ key: c.key, name: c.name, type: c.type })) })
+      .then(({ covers: found }) => setCovers((cv) => ({ ...cv, ...found })))
+      .catch(() => undefined);
+  }, [deck, guesses, covers]);
 
+  const tastes = useMemo(() => {
+    const byKey = new Map(loved);
+    for (const t of extra) byKey.set(t.key, t);
+    return [...byKey.values()];
+  }, [loved, extra]);
+
+  // Every few taps, ask Qloo what else they'd like.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-  }, [messages.length, interim, phase]);
+    const ids = [...loved.values()].flatMap((t) => (t.entity?.id ? [t.entity.id] : []));
+    if (loved.size - guessedAt.current < GUESS_EVERY || ids.length === 0) return;
+    guessedAt.current = loved.size;
+    const names = Object.fromEntries([...loved.values()].flatMap((t) => (t.entity ? [[t.entity.id, t.entity.name]] : [])));
+    const exclude = [...(deck ?? []), ...guesses].flatMap((c) => (c.taste.entity?.id ? [c.taste.entity.id] : []));
+    post<{ cards: PickerCard[] }>('/api/picker', { action: 'guess', ids, names, exclude })
+      .then(({ cards }) => {
+        if (cards.length) setGuesses((g) => [...cards.filter((c) => !g.some((x) => x.key === c.key)), ...g].slice(0, 9));
+      })
+      .catch(() => undefined);
+  }, [loved, deck, guesses]);
 
-  async function say(text: string) {
-    if (modeRef.current !== 'voice' || !activeRef.current) return;
-    setPhase('speaking');
-    await speak(text);
-  }
-
-  async function listen() {
-    if (!activeRef.current) return;
-    setPhase('listening');
-    if (modeRef.current === 'text') return;
-
-    setInterim('');
-    setMicReady(false);
-    const l = listenOnce({ onInterim: setInterim, onReady: () => setMicReady(true) });
-    listeningRef.current = l;
-    let text = '';
-    try {
-      text = await l.result;
-    } catch (err) {
-      const code = err instanceof SpeechError ? err.code : 'unknown';
-      if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'unsupported') {
-        setMode('text');
-        setNotice('Microphone access is off, so you can type instead.');
-        setPhase('listening');
-      } else {
-        setNotice("I couldn't hear you. Tap the mic to try again.");
-        activeRef.current = false;
-        setPhase('paused');
-      }
-      return;
-    } finally {
-      listeningRef.current = null;
-      setMicReady(false);
-    }
-    if (!activeRef.current) return;
-
-    if (!text) {
-      emptyTriesRef.current += 1;
-      if (emptyTriesRef.current < 2) return listen();
-      emptyTriesRef.current = 0;
-      setNotice("I didn't catch that. Tap the mic when you're ready.");
-      activeRef.current = false;
-      setPhase('paused');
-      return;
-    }
-    emptyTriesRef.current = 0;
-    setInterim('');
-    await submit(text);
-  }
-
-  async function submit(text: string) {
-    setNotice(null);
-    setMessages([...messagesRef.current, { role: 'user', text }]);
-    await runTurn();
-  }
-
-  async function runTurn() {
-    setPhase('thinking');
+  function toggle(card: PickerCard) {
     setError(null);
-    let data: TurnResponse;
-    try {
-      const res = await apiFetch('/api/onboarding/turn', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          messages: messagesRef.current,
-          heard: heardRef.current.map(({ name, type, status }) => ({ name, type, status })),
-          activities: activitiesRef.current.map(({ name, status }) => ({ name, status })),
-          preferences: preferencesRef.current,
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error || "Echo couldn't respond just now. Try again.");
-      data = body as TurnResponse;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Echo couldn't respond just now. Try again.");
-      activeRef.current = false;
-      setPhase('paused');
-      return;
-    }
-
-    setMessages([...messagesRef.current, { role: 'echo', text: data.reply }]);
-    const known = new Set(heardRef.current.map((h) => h.key));
-    const added = data.added.filter((h) => !known.has(h.key));
-    setHeard([...heardRef.current, ...added]);
-    setFreshKeys(new Set(added.map((h) => h.key)));
-    setActivities([...activitiesRef.current, ...(data.activities ?? [])]);
-    const patch = data.preferences ?? {};
-    setPreferences({
-      ...preferencesRef.current,
-      ...patch,
-      notes: [...new Set([...preferencesRef.current.notes, ...(patch.notes ?? [])])],
+    setLoved((m) => {
+      const next = new Map(m);
+      if (next.has(card.key)) next.delete(card.key);
+      else next.set(card.key, card.taste);
+      return next;
     });
-
-    await say(data.reply);
-    if (!activeRef.current) return;
-    if (data.done) {
-      finish();
-      return;
-    }
-    await listen();
   }
 
-  async function begin() {
-    activeRef.current = true;
-    setNotice(null);
-    setMessages([{ role: 'echo', text: OPENING_LINE }]);
-    await say(OPENING_LINE);
-    await listen();
+  function go(next: Step) {
+    setError(null);
+    setStep(next);
+    window.scrollTo({ top: 0 });
   }
 
-  function pause() {
-    activeRef.current = false;
-    listeningRef.current?.cancel();
-    stopSpeaking();
-    setInterim('');
-    setPhase('paused');
+  function back() {
+    const i = STEPS.indexOf(step);
+    if (i > 0) go(STEPS[i - 1]!);
+    else router.push('/');
   }
 
-  async function resume() {
-    activeRef.current = true;
-    setNotice(null);
-    const last = messagesRef.current.at(-1);
-    // A failed request leaves the person's message unanswered: retry it.
-    if (last?.role === 'user') return runTurn();
-    await listen();
-  }
+  const stepIndex = STEPS.indexOf(step);
 
-  function switchToText() {
-    pause();
-    setMode('text');
-    activeRef.current = true;
-    if (messagesRef.current.length === 0) setPhase('start');
-    else setPhase('listening');
-  }
-
-  function finish() {
-    activeRef.current = false;
-    listeningRef.current?.cancel();
-    stopSpeaking();
-    setInterim('');
-    setPhase('review');
-  }
-
-  async function sendDraft(e: React.FormEvent) {
-    e.preventDefault();
-    const text = draft.trim();
-    if (!text) {
-      setNotice('Type something you love first.');
-      return;
-    }
-    if (phase === 'thinking') return;
-    setDraft('');
-    activeRef.current = true;
-    await submit(text);
-  }
-
-  if (phase === 'review') {
+  if (step === 'review') {
     return (
       <Review
-        heard={heard}
-        onChange={setHeard}
+        heard={tastes}
+        onChange={(next) => {
+          setLoved(new Map(next.map((t) => [t.key, t])));
+          setExtra([]);
+        }}
         activities={activities}
         onActivitiesChange={setActivities}
         preferences={preferences}
         onPreferencesChange={setPreferences}
-        onKeepTalking={() => {
-          // Voice waits for a tap on Resume so the mic never starts unasked.
-          activeRef.current = modeRef.current === 'text';
-          setPhase(modeRef.current === 'text' ? 'listening' : 'paused');
-        }}
-        onBuild={(tastes) => {
+        onKeepTalking={() => go('pick')}
+        keepLabel="Pick more"
+        onBuild={(built) => {
           const previous = loadProfile();
-          saveProfile({
-            name: previous?.name,
-            tastes,
-            activities: activitiesRef.current,
-            preferences: preferencesRef.current,
-            area: previous?.area ?? SAMPLE_AREA,
-          });
+          saveProfile({ name: previous?.name, tastes: built, activities, preferences, area });
           router.push('/echo?build=1');
         }}
       />
     );
   }
 
-  const busy = phase === 'thinking';
-
   return (
-    <main className="flex min-h-0 flex-1 flex-col gap-3">
+    <main className="flex flex-1 flex-col gap-3">
       <header className="flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-1.5 text-base font-bold" onClick={pause}>
-          <ArrowLeftIcon className="size-[18px]" />
-          {phase === 'start' ? 'Back' : mode === 'text' && phase === 'listening' ? 'Your turn' : STATUS_LABEL[phase]}
-        </Link>
-        {heard.length > 0 && <span className="text-xs text-faint">{heard.length} heard</span>}
+        <button type="button" onClick={back} className="flex cursor-pointer items-center gap-1.5 text-base font-bold">
+          <ArrowLeftIcon className="size-[18px]" /> Back
+        </button>
+        <div className="flex gap-1" aria-label={`Step ${stepIndex + 1} of ${STEPS.length}`}>
+          {STEPS.map((s, i) => (
+            <span key={s} className={`h-1.5 w-5 rounded-full ${i <= stepIndex ? 'bg-accent' : 'bg-line'}`} />
+          ))}
+        </div>
       </header>
 
-      {phase === 'start' && mode === 'voice' ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <h1 className="font-voice text-[1.75rem] leading-tight font-medium text-balance">Ready when you are</h1>
-          <p className="max-w-[32ch] text-sm text-muted">
-            Echo will ask a few questions out loud. Answer however you like.
-          </p>
-          <button
-            type="button"
-            onClick={begin}
-            aria-label="Start the conversation"
-            className="mt-6 grid size-[88px] cursor-pointer place-items-center rounded-full bg-accent text-accent-ink ring-[10px] ring-accent-soft transition-transform active:scale-95"
-          >
-            <MicIcon className="size-9" />
-          </button>
-          <p className="text-sm text-muted">Tap to start</p>
-          <p className="mt-6 max-w-[34ch] text-xs text-faint">
-            Your browser turns speech into text (Chrome uses Google, Safari uses Apple). Echo keeps only the names you mention.
-          </p>
-          <button type="button" onClick={switchToText} className="cursor-pointer text-sm font-bold text-accent">
-            Type instead
-          </button>
-        </div>
-      ) : (
+      {step === 'pick' && (
+        <PickStep
+          deck={deck}
+          guesses={guesses}
+          shown={shown}
+          covers={covers}
+          loved={loved}
+          error={error}
+          onToggle={toggle}
+          onMore={() => setShown((s) => s + 9)}
+          onNext={() => {
+            if (loved.size < 3) return setError('Tap at least three things you love.');
+            go('open');
+          }}
+        />
+      )}
+
+      {step === 'open' && (
+        <OpenStep
+          known={tastes.map((t) => t.key)}
+          added={extra}
+          onAdd={(t, acts) => {
+            setExtra((e) => [...e, ...t.filter((x) => !e.some((y) => y.key === x.key))]);
+            setActivities((a) => [...a, ...acts.filter((x) => !a.some((y) => y.name.toLowerCase() === x.name.toLowerCase()))]);
+          }}
+          onNext={() => go('activities')}
+        />
+      )}
+
+      {step === 'activities' && <ActivitiesStep activities={activities} onChange={setActivities} onNext={() => go('prefs')} />}
+
+      {step === 'prefs' && <PrefsStep preferences={preferences} onChange={setPreferences} onNext={() => go('area')} />}
+
+      {step === 'area' && (
         <>
-          <section aria-label="Conversation" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-2">
-            {messages.map((m, i) =>
-              m.role === 'echo' ? (
-                <p key={i} className="font-voice text-[1.15rem] leading-snug">
-                  {m.text}
-                </p>
-              ) : (
-                <p key={i} className="max-w-[86%] self-end rounded-2xl rounded-br-sm bg-sunk px-3 py-2 text-[0.9rem]">
-                  {m.text}
-                </p>
-              ),
-            )}
-            {interim && (
-              <p className="max-w-[86%] self-end rounded-2xl rounded-br-sm border border-dashed border-line px-3 py-2 text-[0.9rem] text-muted">
-                {interim}
-              </p>
-            )}
-            {busy && <p className="text-sm text-faint" aria-live="polite">Echo is thinking…</p>}
-            <div ref={bottomRef} />
-          </section>
-
-          {heard.length > 0 && (
-            <section aria-label="Heard so far" className="flex flex-col gap-1.5">
-              <h2 className="text-[11px] font-bold tracking-[0.08em] text-faint uppercase">Heard so far</h2>
-              <ul className="flex flex-wrap gap-1.5">
-                {heard.map((h) => (
-                  <li
-                    key={h.key}
-                    className={`rounded-full border px-2.5 py-1 text-xs ${
-                      freshKeys.has(h.key) ? 'border-transparent bg-echo-soft text-echo' : 'border-line bg-surface'
-                    }`}
-                  >
-                    {h.entity?.name ?? h.name}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {(notice || error) && (
-            <p role="status" className={`text-sm ${error ? 'text-warn' : 'text-muted'}`}>
-              {error ?? notice}
-            </p>
-          )}
-
-          {mode === 'voice' ? (
-            <div className="flex flex-col gap-3">
-              <p className="text-center text-sm font-bold" aria-live="polite">
-                {phase === 'listening'
-                  ? micReady
-                    ? interim
-                      ? 'Take your time. Tap Send when you’re done.'
-                      : 'Go ahead, I’m listening'
-                    : 'One sec…'
-                  : phase === 'speaking'
-                    ? 'Echo is talking'
-                    : phase === 'thinking'
-                      ? 'Thinking…'
-                      : ''}
-              </p>
-              <Wave active={phase === 'listening' && micReady} />
-              <div className="flex gap-2">
-                {phase === 'paused' ? (
-                  <button type="button" onClick={resume} className={btn('primary')}>
-                    <MicIcon className="size-4" /> {error ? 'Try again' : 'Resume'}
-                  </button>
-                ) : (
-                  <>
-                    <button type="button" onClick={pause} className={btn()}>
-                      <PauseIcon className="size-4" /> Pause
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => listeningRef.current?.stop()}
-                      disabled={phase !== 'listening' || !interim}
-                      className={btn('primary')}
-                    >
-                      <SendIcon className="size-4" /> Send
-                    </button>
-                  </>
-                )}
-              </div>
-              <div className="flex justify-center gap-5 text-sm font-bold text-accent">
-                <button type="button" onClick={switchToText} className="cursor-pointer">
-                  Type instead
-                </button>
-                <button type="button" onClick={finish} className="cursor-pointer">
-                  I&apos;m finished
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {error && (
-                <button type="button" onClick={resume} className={btn()}>
-                  Try again
-                </button>
-              )}
-              <form onSubmit={sendDraft} className="flex gap-2">
-                <label htmlFor="answer" className="sr-only">
-                  Your answer
-                </label>
-                <input
-                  id="answer"
-                  value={draft}
-                  onChange={(e) => {
-                    setDraft(e.target.value);
-                    if (notice) setNotice(null);
-                  }}
-                  placeholder="Severance, and Phoebe Bridgers on repeat"
-                  autoComplete="off"
-                  maxLength={600}
-                  className="min-w-0 flex-1 rounded-2xl border border-line bg-surface px-3.5 py-3 text-[0.95rem] outline-none focus:border-accent"
-                />
-                <button type="submit" aria-label="Send" disabled={busy} className={`${btn('primary')} flex-none px-4`}>
-                  <SendIcon className="size-4" />
-                </button>
-              </form>
-              <button type="button" onClick={finish} className={btn()}>
-                Done <ArrowRightIcon className="size-4" />
-              </button>
-            </div>
-          )}
+          <Voice className="text-[1.3rem]">Last thing: where should Echo look for places?</Voice>
+          <AreaPicker
+            current={area.sample ? undefined : area}
+            onPick={(a) => {
+              setArea(a);
+              go('review');
+            }}
+          />
+          <div className="flex-1" />
+          <button type="button" onClick={() => go('review')} className="cursor-pointer text-center text-sm font-bold text-accent">
+            {area.sample ? 'Skip for now' : `Keep ${area.label}`}
+          </button>
         </>
       )}
     </main>
   );
 }
 
-function btn(kind?: 'primary') {
-  const base =
-    'inline-flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-2xl border px-3.5 py-3 text-sm font-bold transition-transform active:scale-[0.98] disabled:opacity-60';
-  return kind === 'primary' ? `${base} border-accent bg-accent text-accent-ink` : `${base} border-line bg-surface text-ink`;
+function Cover({ card, src }: { card: PickerCard; src?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (src && !failed) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="aspect-[3/4] w-full rounded-xl bg-sunk object-cover" />;
+  }
+  return (
+    <div className="grid aspect-[3/4] w-full place-items-center rounded-xl bg-sunk px-2 text-center font-voice text-[0.95rem] leading-tight text-muted">
+      {card.name}
+    </div>
+  );
 }
 
-function Wave({ active }: { active: boolean }) {
-  const heights = [12, 26, 38, 20, 40, 28, 14, 30, 18];
+function PickStep(props: {
+  deck: PickerCard[] | null;
+  guesses: PickerCard[];
+  shown: number;
+  covers: Record<string, string>;
+  loved: Map<string, HeardTaste>;
+  error: string | null;
+  onToggle: (c: PickerCard) => void;
+  onMore: () => void;
+  onNext: () => void;
+}) {
+  const { deck, guesses, shown, covers, loved, error } = props;
+  const n = loved.size;
+  const visible = (deck ?? []).filter((c) => !guesses.some((g) => g.key === c.key));
+  const card = (c: PickerCard) => {
+    const on = loved.has(c.key);
+    return (
+      <li key={c.key}>
+        <button
+          type="button"
+          onClick={() => props.onToggle(c)}
+          aria-pressed={on}
+          className={`relative flex w-full cursor-pointer flex-col gap-1 rounded-2xl p-1 text-left transition-transform active:scale-[0.97] ${on ? 'bg-accent-soft ring-2 ring-accent' : ''}`}
+        >
+          <Cover card={c} src={c.image || covers[c.key] || undefined} />
+          {on && (
+            <span className="absolute top-2.5 right-2.5 grid size-7 place-items-center rounded-full bg-accent text-accent-ink">
+              <CheckIcon className="size-4" />
+            </span>
+          )}
+          <span className="line-clamp-2 px-0.5 text-[0.78rem] leading-tight font-bold">{c.name}</span>
+          <span className="line-clamp-1 px-0.5 text-[10.5px] text-faint">{c.guess ? (c.reason ?? "Echo's guess") : TYPE_LABEL[c.type]}</span>
+        </button>
+      </li>
+    );
+  };
+
   return (
-    <div className="flex h-10 items-center justify-center gap-1" aria-hidden="true">
-      {heights.map((h, i) => (
-        <span
-          key={i}
-          className={`block w-1 rounded-full bg-accent ${active ? 'animate-[wave_1.1s_ease-in-out_infinite]' : 'opacity-30'}`}
-          style={{ height: active ? h : 6, animationDelay: `${(i % 3) * 0.15}s` }}
+    <>
+      <h1 className="font-voice text-[1.6rem] leading-tight font-medium">Tap what you love</h1>
+      <p className="text-sm text-muted">Shows, music, films, books, games, podcasts. Skip anything you don&apos;t know.</p>
+
+      {guesses.length > 0 && (
+        <section className="flex flex-col gap-2 rounded-2xl bg-sunk p-2" aria-label="Echo's guesses">
+          <Label>Echo thinks you&apos;ll like</Label>
+          <ul className="grid grid-cols-3 gap-2">{guesses.map(card)}</ul>
+        </section>
+      )}
+
+      {deck === null ? <Spinner label="Finding things to show you…" /> : <ul className="grid grid-cols-3 gap-2">{visible.slice(0, shown).map(card)}</ul>}
+      {deck && shown < visible.length && (
+        <Button onClick={props.onMore} className="self-center px-5 py-2">
+          Show more
+        </Button>
+      )}
+
+      <div className="sticky bottom-0 -mx-4 mt-auto flex flex-col gap-1.5 border-t border-line bg-bg/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+        {error && (
+          <p role="status" className="text-center text-sm text-warn">
+            {error}
+          </p>
+        )}
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-muted tabular-nums">
+            {Math.min(n, TARGET)} of {TARGET} things
+          </span>
+          <Button kind="primary" onClick={props.onNext} className="px-6">
+            {n >= 6 ? "That's enough" : 'Next'}
+          </Button>
+        </div>
+        <p className="text-center text-[10px] text-faint">Covers from Qloo, Apple, Open Library and Wikipedia.</p>
+      </div>
+    </>
+  );
+}
+
+function OpenStep({ known, added, onAdd, onNext }: { known: string[]; added: HeardTaste[]; onAdd: (t: HeardTaste[], a: Activity[]) => void; onNext: () => void }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [reply, setReply] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [listening, setListening] = useState(false);
+  const listenRef = useRef<Listening | null>(null);
+
+  async function send(answer: string) {
+    const t = answer.trim();
+    if (!t) return setError('Type or say something you love.');
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await post<{ reply: string; added: HeardTaste[]; activities: Activity[] }>('/api/onboarding/extract', { text: t, known });
+      setReply(r.reply);
+      onAdd(r.added, r.activities);
+      setText('');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function dictate() {
+    if (listening) return listenRef.current?.stop();
+    if (!speechSupport().listen) return setError("This browser can't listen. Type it instead.");
+    setError(null);
+    setListening(true);
+    const l = listenOnce({ onInterim: setText });
+    listenRef.current = l;
+    try {
+      const said = await l.result;
+      if (said) await send(said);
+    } catch {
+      setError("Couldn't use the microphone. Type it instead.");
+    } finally {
+      setListening(false);
+      listenRef.current = null;
+    }
+  }
+
+  return (
+    <>
+      <Voice className="text-[1.3rem]">I&apos;d never have guessed these. What&apos;s one thing you love that wasn&apos;t in there?</Voice>
+      <p className="text-sm text-muted">A band nobody&apos;s heard of, a podcast, a game you keep going back to.</p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send(text);
+        }}
+        className="flex items-end gap-2"
+      >
+        <label htmlFor="open-answer" className="sr-only">
+          Something you love
+        </label>
+        <input
+          id="open-answer"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            if (error) setError(null);
+          }}
+          placeholder="Mitski, and the Dolly Parton's America podcast"
+          maxLength={600}
+          className="min-w-0 flex-1 rounded-2xl border border-line bg-surface px-3.5 py-3 text-[0.95rem] outline-none focus:border-accent"
         />
-      ))}
+        <button
+          type="button"
+          onClick={dictate}
+          aria-label={listening ? 'Stop listening' : 'Say it instead'}
+          className={`grid size-12 flex-none cursor-pointer place-items-center rounded-full ${listening ? 'bg-accent text-accent-ink ring-4 ring-accent-soft' : 'border border-line bg-surface'}`}
+        >
+          <MicIcon className="size-5" />
+        </button>
+      </form>
+      <Button type="button" onClick={() => send(text)} disabled={busy}>
+        {busy ? 'Adding…' : 'Add it'}
+      </Button>
+      {error && (
+        <p role="status" className="text-sm text-warn">
+          {error}
+        </p>
+      )}
+      {reply && <Voice>{reply}</Voice>}
+      {added.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {added.map((t) => (
+            <Chip key={t.key} tone="echo">
+              {t.entity?.name ?? t.name}
+            </Chip>
+          ))}
+        </div>
+      )}
+      <div className="flex-1" />
+      <Button kind="primary" onClick={onNext}>
+        {added.length ? 'Next' : 'Skip'}
+      </Button>
+    </>
+  );
+}
+
+const ACTIVITY_LABEL = { does: 'I do this', wants_to: 'Want to try', used_to: 'Used to' } as const;
+
+function ActivitiesStep({ activities, onChange, onNext }: { activities: Activity[]; onChange: (a: Activity[]) => void; onNext: () => void }) {
+  const [custom, setCustom] = useState('');
+  const statusOf = (name: string) => activities.find((a) => a.name.toLowerCase() === name.toLowerCase())?.status;
+
+  function cycle(name: string, hobbyId?: string) {
+    const current = statusOf(name);
+    const rest = activities.filter((a) => a.name.toLowerCase() !== name.toLowerCase());
+    const next: Activity['status'] | undefined = current === undefined ? 'does' : current === 'does' ? 'wants_to' : undefined;
+    onChange(next ? [...rest, { name, status: next, hobbyId: hobbyId ?? hobbyIdFor(name) }] : rest);
+  }
+
+  const extras = activities.filter((a) => !ACTIVITY_CHIPS.some((c) => c.name.toLowerCase() === a.name.toLowerCase()));
+
+  return (
+    <>
+      <Voice className="text-[1.3rem]">What do you do with a free afternoon, or wish you did?</Voice>
+      <p className="text-sm text-muted">Tap once if you do it, twice if you want to try it.</p>
+      <ul className="flex flex-wrap gap-2">
+        {[...ACTIVITY_CHIPS, ...extras.map((a) => ({ name: a.name, hobbyId: a.hobbyId }))].map((c) => {
+          const s = statusOf(c.name);
+          return (
+            <li key={c.name}>
+              <button
+                type="button"
+                onClick={() => cycle(c.name, c.hobbyId)}
+                className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-2 text-sm ${
+                  s === 'does' ? 'border-transparent bg-accent text-accent-ink' : s ? 'border-transparent bg-echo-soft text-echo' : 'border-line bg-surface'
+                }`}
+              >
+                {c.name}
+                {s && <span className="text-[11px] opacity-90">{ACTIVITY_LABEL[s]}</span>}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const name = custom.trim().toLowerCase();
+          if (!name) return;
+          if (!statusOf(name)) onChange([...activities, { name, status: 'does', hobbyId: hobbyIdFor(name) }]);
+          setCustom('');
+        }}
+        className="flex gap-2"
+      >
+        <label htmlFor="custom-activity" className="sr-only">
+          Add an activity
+        </label>
+        <input
+          id="custom-activity"
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          placeholder="Something else, like bouldering"
+          maxLength={60}
+          className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent"
+        />
+        <Button type="submit">Add</Button>
+      </form>
+      <div className="flex-1" />
+      <Button kind="primary" onClick={onNext}>
+        Next
+      </Button>
+    </>
+  );
+}
+
+function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value?: T; options: Array<{ id: T; label: string }>; onChange: (v: T) => void }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label as="p">{label}</Label>
+      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }} role="radiogroup" aria-label={label}>
+        {options.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={value === o.id}
+            onClick={() => onChange(o.id)}
+            className={`cursor-pointer rounded-xl border px-2 py-2.5 text-sm font-semibold ${value === o.id ? 'border-accent bg-accent text-accent-ink' : 'border-line bg-surface'}`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
+  );
+}
+
+const DISTANCES = [1, 3, 5, 10, 20];
+
+function PrefsStep({ preferences: p, onChange, onNext }: { preferences: Preferences; onChange: (p: Preferences) => void; onNext: () => void }) {
+  const budget = p.budget ?? 150;
+  return (
+    <>
+      <Voice className="text-[1.3rem]">How do you like to go out?</Voice>
+      <Segmented
+        label="Company"
+        value={p.company}
+        options={[
+          { id: 'solo', label: 'Solo' },
+          { id: 'group', label: 'With people' },
+          { id: 'either', label: 'Either' },
+        ]}
+        onChange={(company) => onChange({ ...p, company })}
+      />
+      <Segmented
+        label="Setting"
+        value={p.setting}
+        options={[
+          { id: 'indoor', label: 'Indoors' },
+          { id: 'outdoor', label: 'Outdoors' },
+          { id: 'either', label: 'Either' },
+        ]}
+        onChange={(setting) => onChange({ ...p, setting })}
+      />
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-baseline justify-between">
+          <Label as="p">Budget per outing</Label>
+          <span className="text-sm font-bold tabular-nums">{budget >= 150 ? 'No limit' : `$${budget}`}</span>
+        </div>
+        <label htmlFor="budget" className="sr-only">
+          Budget per outing in dollars
+        </label>
+        <input
+          id="budget"
+          type="range"
+          min={0}
+          max={150}
+          step={5}
+          value={budget}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            onChange({ ...p, budget: v >= 150 ? undefined : v });
+          }}
+          className="w-full accent-[var(--accent)]"
+        />
+        <p className="text-xs text-faint">Places show $ to $$$$: $ is under $15, $$ about $15–40, $$$ about $40–80.</p>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label as="p">How far you&apos;ll go</Label>
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="How far you'll go">
+          {DISTANCES.map((d) => (
+            <button
+              key={d}
+              type="button"
+              role="radio"
+              aria-checked={p.maxMiles === d}
+              onClick={() => onChange({ ...p, maxMiles: d })}
+              className={`cursor-pointer rounded-full border px-3.5 py-1.5 text-sm font-semibold ${p.maxMiles === d ? 'border-accent bg-accent text-accent-ink' : 'border-line bg-surface'}`}
+            >
+              {d} mi
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="flex-1" />
+      <Button kind="primary" onClick={onNext}>
+        Next
+      </Button>
+      <Link href="#" onClick={(e) => (e.preventDefault(), onNext())} className="text-center text-sm font-bold text-accent">
+        Skip
+      </Link>
+    </>
   );
 }

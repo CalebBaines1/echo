@@ -24,11 +24,12 @@ interface NominatimPlace {
   address?: Record<string, string>;
 }
 
+/** "Williamsburg, Brooklyn" or "Oak Park, Chicago": the place's own name, then the next larger area. */
 function labelFor(p: NominatimPlace): string {
   const a = p.address ?? {};
-  const local = a.neighbourhood || a.suburb || a.city_district || a.quarter || a.borough || p.name;
-  const city = a.city || a.town || a.village || a.municipality || a.county;
-  const parts = [local, city && city !== local ? city : undefined].filter(Boolean);
+  const local = p.name || a.neighbourhood || a.suburb || a.city_district || a.quarter;
+  const larger = [a.suburb, a.borough, a.city_district, a.city, a.town, a.village, a.municipality, a.county].find((x) => x && x !== local);
+  const parts = [local, larger].filter(Boolean);
   return parts.length ? parts.join(', ') : (p.display_name ?? '').split(',').slice(0, 2).join(',').trim();
 }
 

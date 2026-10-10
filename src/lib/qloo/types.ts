@@ -37,6 +37,8 @@ export interface EntitySummary {
   /** Qloo's disambiguation text, e.g. "2021" or "1965, Frank Herbert". */
   disambiguation?: string;
   year?: number;
+  /** Cover or portrait image URL. */
+  image?: string;
 }
 
 export type Weekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
@@ -68,6 +70,7 @@ export interface MediaSummary {
   year?: number;
   description?: string;
   affinity?: number;
+  image?: string;
   /** First few tag names, for display. */
   tags: string[];
   /** Every tag with its ID, for analysis such as taste leanings. */

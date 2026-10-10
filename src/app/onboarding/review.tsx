@@ -47,6 +47,7 @@ export function Review({
   preferences,
   onPreferencesChange,
   onKeepTalking,
+  keepLabel = 'Keep talking',
   onBuild,
 }: {
   heard: HeardTaste[];
@@ -56,6 +57,7 @@ export function Review({
   preferences: Preferences;
   onPreferencesChange: (next: Preferences) => void;
   onKeepTalking: () => void;
+  keepLabel?: string;
   onBuild: (tastes: HeardTaste[]) => void;
 }) {
   const [adding, setAdding] = useState('');
@@ -259,7 +261,7 @@ export function Review({
 
       <div className="flex-1" />
       <button type="button" onClick={onKeepTalking} className="cursor-pointer text-center text-sm font-bold text-accent">
-        Keep talking
+        {keepLabel}
       </button>
       <button
         type="button"
