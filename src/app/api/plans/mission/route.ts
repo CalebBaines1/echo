@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { getAnthropic } from '@/lib/ai/anthropic';
 import { MENTION_TYPES } from '@/lib/onboarding/types';
-import { runPlanner } from '@/lib/plans/planner';
+import { PlannerDataError, runPlanner } from '@/lib/plans/planner';
 import { getQloo } from '@/lib/qloo/server';
 import { guard } from '@/lib/api/guard';
 
@@ -65,7 +65,12 @@ export async function POST(req: Request) {
         console.error('Mission failed', status ?? '', err instanceof Error ? err.message : err);
         send({
           type: 'error',
-          message: status === 429 || status === 529 ? 'Echo is busy right now. Try again in a moment.' : "Echo couldn't finish this plan. Try again.",
+          message:
+            err instanceof PlannerDataError
+              ? `Echo can't look up places near ${profile.area.label} right now. Try again later, or switch your area to the sample one.`
+              : status === 429 || status === 529
+                ? 'Echo is busy right now. Try again in a moment.'
+                : "Echo couldn't finish this plan. Try again.",
         });
       } finally {
         controller.close();

@@ -198,6 +198,14 @@ function inWindow(time: string, part: DayPart): boolean {
   return time >= from && time <= to;
 }
 
+/** No place data could be fetched for this person's area, usually because live Qloo calls are off. */
+export class PlannerDataError extends Error {
+  constructor() {
+    super('No place data for this area.');
+    this.name = 'PlannerDataError';
+  }
+}
+
 export async function runPlanner(
   input: PlannerInput,
   deps: { model: BetaMessages; qloo: QlooPlaces; onEvent: (e: PlannerEvent) => void },
@@ -213,6 +221,7 @@ export async function runPlanner(
   const maxMiles = input.preferences.maxMiles;
   const radiusMeters = maxMiles && maxMiles > 5 ? Math.round(maxMiles * METERS_PER_MILE) : 8000;
   const found = new Map<string, FoundPlace>();
+  let unavailable = 0; // Searches that failed because place data couldn't be fetched.
   const dropped: DroppedOption[] = [];
 
   const traitText = input.traits?.length ? input.traits.slice(0, 3).join(', ').toLowerCase() : input.tastes.slice(0, 3).map((t) => t.entity?.name ?? t.name).join(', ');
@@ -246,6 +255,7 @@ export async function runPlanner(
     } catch (err) {
       emit({ kind: 'dropped', text: `Couldn't reach Qloo for ${label}` });
       const offline = err instanceof QlooOfflineError;
+      if (offline) unavailable++;
       return { content: offline ? 'Place data for this search is unavailable right now. Try other categories or finish with what you have.' : 'Place search failed.', isError: true };
     }
 
@@ -414,6 +424,8 @@ export async function runPlanner(
       }),
     );
 
+    // Nothing found and the searches can't reach place data: stop rather than spend more model turns.
+    if (!finished && found.size === 0 && unavailable >= 3) throw new PlannerDataError();
     if (finished) {
       if (finished.stops.some((s) => s.hoursThatDay)) emit({ kind: 'ok', text: `Checked ${day[0]!.toUpperCase()}${day.slice(1)} hours for the picks` });
       return finished;
