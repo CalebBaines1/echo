@@ -57,6 +57,24 @@ describe('planGroup', () => {
   });
 });
 
+describe('planGroup with no Qloo data', () => {
+  it("uses the scout's places, marked unverified and without fit numbers", async () => {
+    const qloo = { findPlaces: async () => { throw new Error('offline'); } };
+    const scout = async () => [{ ...place('claude:moms'), reasons: [], affinity: undefined, hours: undefined, unverified: true, description: 'Cozy' }];
+    const parse = async () => ({
+      stop_reason: 'end_turn',
+      parsed_output: { exchange: [{ member_id: 'you', text: 'Hi' }], title: 'T', summary: 'S', stops: [{ place_id: 'claude:moms', time: '14:00', why: 'Cozy' }] },
+    });
+    const result = await planGroup(
+      { people, area: { label: 'X', lat: 1, lon: 2 }, date: '2026-10-17', request: 'anything' },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { qloo: qloo as any, model: { parse } as any, onStep: () => {}, scout },
+    );
+    expect(result.stops[0]).toMatchObject({ unverified: true });
+    expect(result.stops[0]!.fit).toBeUndefined();
+  });
+});
+
 describe('compareGroup', () => {
   it('gives a rough comparison when a friend has no matched tastes', async () => {
     const qloo = { compare: async () => { throw new Error('no'); }, recommend: async () => [] };

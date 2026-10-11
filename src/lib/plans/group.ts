@@ -7,6 +7,7 @@ import type { QlooClient } from '@/lib/qloo/client';
 import { placeCategory } from '@/lib/qloo/tags';
 import type { CompareResult, PlaceSummary } from '@/lib/qloo/types';
 import { hoursOn, isOpenAt, weekdayOf } from './time';
+import type { PlaceScout } from './place-scout';
 import type { GroupTurn, PlaceCard, PlanStop, Step } from './types';
 import { PART_WINDOWS, type DayPart } from './when';
 
@@ -193,6 +194,7 @@ export async function planGroup(
     model: Pick<Anthropic['beta']['messages'], 'parse'>;
     onStep: (s: Step) => void;
     onPlaces?: (places: PlaceCard[]) => void;
+    scout?: PlaceScout;
   },
 ): Promise<GroupPlanResult> {
   const { people, area, date } = input;
@@ -235,13 +237,19 @@ export async function planGroup(
           scoredFor = [you];
           deps.onStep({ kind: 'info', text: `Found ${places.length} ${cat.places} from your echo; couldn't check everyone's together` });
         } catch {
-          deps.onStep({ kind: 'dropped', text: `Couldn't reach Qloo for ${cat.places}` });
-          return;
+          // Still nothing: real places from OpenStreetMap, without taste scores.
+          places = deps.scout ? await deps.scout({ categoryId: cat.id, places: cat.places, area }).catch(() => []) : [];
+          if (!places.length) {
+            deps.onStep({ kind: 'dropped', text: `Couldn't reach Qloo for ${cat.places}` });
+            return;
+          }
+          scoredFor = [];
+          deps.onStep({ kind: 'info', text: `Qloo has no data here yet, so I found ${cat.places} on OpenStreetMap` });
         }
       }
       const cards: PlaceCard[] = [];
       for (const place of places) {
-        const s: ScoredPlace = { place, categoryLabel: cat.label, hoursThatDay: hoursOn(place.hours, day), fit: personalFit(place, scoredFor) };
+        const s: ScoredPlace = { place, categoryLabel: cat.label, hoursThatDay: hoursOn(place.hours, day), fit: scoredFor.length ? personalFit(place, scoredFor) : {} };
         scored.push(s);
         cards.push({
           id: place.id,
@@ -251,6 +259,8 @@ export async function planGroup(
           priceLevel: place.priceLevel,
           matchPercent: place.affinity !== undefined ? Math.round(place.affinity * 100) : undefined,
           hoursThatDay: s.hoursThatDay,
+          reason: place.unverified ? place.description : undefined,
+          unverified: place.unverified,
         });
       }
       if (cards.length) deps.onPlaces?.(cards);
@@ -267,6 +277,7 @@ export async function planGroup(
     price_level: s.place.priceLevel ?? null,
     [`hours_${day}`]: s.hoursThatDay ?? 'unknown',
     fit: Object.fromEntries(people.map((p) => [p.name, s.fit[p.id] ?? 'unknown'])),
+    ...(s.place.unverified ? { kind: s.place.tags.join(', '), source: 'OpenStreetMap, no taste score' } : {}),
   }));
 
   const system = `You write a short planning conversation between AI agents ("Echos"), each representing one person, followed by the plan they agree on.
@@ -340,7 +351,8 @@ Rules:
           matchPercent: p.affinity !== undefined ? Math.round(p.affinity * 100) : undefined,
           why: s.why.trim(),
           location: p.location,
-          fit: f.fit,
+          fit: Object.keys(f.fit).length ? f.fit : undefined,
+          unverified: p.unverified,
         };
       }),
     };

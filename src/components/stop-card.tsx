@@ -21,6 +21,7 @@ export function StopCard({ stop, label, members }: { stop: PlanStop; label?: str
         {stop.distanceMiles !== undefined && <span className="flex-none text-xs text-faint">{stop.distanceMiles} mi</span>}
       </div>
       {meta.length > 0 && <p className="text-[0.8rem] text-muted">{meta.join(' · ')}</p>}
+      {stop.unverified && <p className="text-[0.8rem] text-muted">From OpenStreetMap while Qloo data is off here.{stop.hoursThatDay ? '' : ' Check hours before you go.'}</p>}
       {stop.why && <Why>{stop.matchPercent && !fits.length ? `${stop.matchPercent}% match · ${stop.why}` : stop.why}</Why>}
       {fits.length > 0 && (
         <div className="mt-2 flex flex-col gap-1" aria-label="How well this fits each person">

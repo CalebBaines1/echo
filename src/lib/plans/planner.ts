@@ -4,7 +4,8 @@ import type { HeardTaste } from '@/lib/onboarding/types';
 import type { Activity, Area, Preferences } from '@/lib/profile/types';
 import { signalIds } from '@/lib/profile/types';
 import type { QlooClient } from '@/lib/qloo/client';
-import { QlooOfflineError } from '@/lib/qloo/errors';
+import { QlooBudgetError, QlooOfflineError } from '@/lib/qloo/errors';
+import type { PlaceScout } from './place-scout';
 import { PLACE_CATEGORIES, VIBE_TAGS, placeCategory } from '@/lib/qloo/tags';
 import type { PlaceSummary } from '@/lib/qloo/types';
 import { hoursOn, isOpenAt, weekdayOf } from './time';
@@ -61,6 +62,7 @@ export const PLANNER_SYSTEM = `You are Echo's planner. You plan real outings for
 
 Rules:
 - Every place in a plan must come from a find_places result in this conversation. Never invent places, opening hours, prices, classes, events, or schedules.
+- Results with a "source" field come from OpenStreetMap, used while Qloo has no data for the area: real places with no match score, and hours only when listed. Prefer Qloo results when you have both, judge fit from the name and kind, and when hours are unknown pick ordinary times and mention that hours are worth checking.
 - Place results include distance in miles, a price level from 1 to 4 when known (often missing), opening hours for the plan's day when known, and a match score showing how well the place fits their taste.
 - Respect their limits: distance, budget (treat price level 1 as under $15, 2 as $15-40, 3 as $40-80, 4 as over $80, and don't rule a place out just because price is unknown), the time window, any moods they picked, and notes such as "prefers quiet places".
 
@@ -208,7 +210,7 @@ export class PlannerDataError extends Error {
 
 export async function runPlanner(
   input: PlannerInput,
-  deps: { model: BetaMessages; qloo: QlooPlaces; onEvent: (e: PlannerEvent) => void },
+  deps: { model: BetaMessages; qloo: QlooPlaces; onEvent: (e: PlannerEvent) => void; scout?: PlaceScout },
 ): Promise<PlannerResult> {
   const emit = (step: Step) => deps.onEvent({ type: 'step', step });
   const status = (text: string) => deps.onEvent({ type: 'status', text });
@@ -234,6 +236,15 @@ export async function runPlanner(
       .map((r) => names.get(r.id)!);
   }
 
+  async function scout(categoryId: string | undefined, label: string): Promise<PlaceSummary[]> {
+    try {
+      return await deps.scout!({ categoryId, places: label, area: input.area });
+    } catch (err) {
+      console.error('Place scout failed', err instanceof Error ? err.message : err);
+      return [];
+    }
+  }
+
   async function findPlaces(categoryArg: string): Promise<{ content: string; isError?: boolean }> {
     const known = placeCategory(categoryArg);
     const tag = known?.placeTag ?? (categoryArg.startsWith('urn:tag:') ? categoryArg : undefined);
@@ -253,16 +264,23 @@ export async function runPlanner(
         explain: true,
       });
     } catch (err) {
-      emit({ kind: 'dropped', text: `Couldn't reach Qloo for ${label}` });
-      const offline = err instanceof QlooOfflineError;
-      if (offline) unavailable++;
-      return { content: offline ? 'Place data for this search is unavailable right now. Try other categories or finish with what you have.' : 'Place search failed.', isError: true };
+      const offline = err instanceof QlooOfflineError || err instanceof QlooBudgetError;
+      // No Qloo data: ask Claude for places it knows, marked unverified.
+      const scouted = offline && deps.scout ? await scout(known?.id, label) : [];
+      if (scouted.length) {
+        places = scouted;
+        emit({ kind: 'info', text: `Qloo has no data here yet, so I found ${label} on OpenStreetMap` });
+      } else {
+        emit({ kind: 'dropped', text: `Couldn't reach Qloo for ${label}` });
+        if (offline) unavailable++;
+        return { content: offline ? 'Place data for this search is unavailable right now. Try other categories or finish with what you have.' : 'Place search failed.', isError: true };
+      }
     }
 
     const limit = maxMiles ?? Infinity;
     const recent = places.filter((p) => avoid.has(p.id));
     const usable = places.filter((p) => !avoid.has(p.id) && (p.distanceMeters === undefined || p.distanceMeters / METERS_PER_MILE <= limit));
-    emit(usable.length ? { kind: 'ok', text: `Found ${usable.length} ${label} near you` } : { kind: 'info', text: `No ${label} within reach` });
+    emit(usable.length ? { kind: 'ok', text: usable.length === 1 ? `Found one of the ${label} near you` : `Found ${usable.length} ${label} near you` } : { kind: 'info', text: `No ${label} within reach` });
     if (recent.length) emit({ kind: 'info', text: `Skipped ${recent.map((p) => p.name).join(', ')}: you've been recently` });
 
     const cards: PlaceCard[] = [];
@@ -277,8 +295,9 @@ export async function runPlanner(
         miles: miles(p),
         priceLevel: p.priceLevel,
         matchPercent: p.affinity !== undefined ? Math.round(p.affinity * 100) : undefined,
-        reason: tasteReasons.length ? `Because you like ${tasteReasons.join(' and ')}` : undefined,
+        reason: p.unverified ? p.description : tasteReasons.length ? `Because you like ${tasteReasons.join(' and ')}` : undefined,
         hoursThatDay,
+        unverified: p.unverified,
       });
       return {
         place_id: p.id,
@@ -290,6 +309,7 @@ export async function runPlanner(
         matches_tastes: tasteReasons,
         tags: p.tags.slice(0, 5),
         description: p.description ?? null,
+        ...(p.unverified ? { source: 'OpenStreetMap: a real place, but with no taste match score. Judge the fit from its name and kind.' } : {}),
       };
     });
     if (cards.length) deps.onEvent({ type: 'places', category: known?.label ?? label, places: cards });
@@ -332,6 +352,7 @@ export async function runPlanner(
       matchPercent: p.affinity !== undefined ? Math.round(p.affinity * 100) : undefined,
       why: why.trim(),
       location: p.location,
+      unverified: p.unverified,
     };
   }
 

@@ -19,6 +19,7 @@ export interface PlaceCard {
   matchPercent?: number;
   reason?: string;
   hoursThatDay?: string;
+  unverified?: boolean;
 }
 
 /** An option the planner set aside, and why. */
@@ -45,6 +46,8 @@ export interface PlanStop {
   location?: LatLon;
   /** Group plans: estimated fit per member id, 0-99. */
   fit?: Record<string, number>;
+  /** Suggested by Claude rather than found in Qloo; details need checking. */
+  unverified?: boolean;
 }
 
 export interface PlanAction {

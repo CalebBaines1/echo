@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getAnthropic } from '@/lib/ai/anthropic';
 import { GroupDataError, planGroup } from '@/lib/plans/group';
+import { osmPlaceScout } from '@/lib/plans/place-scout';
 import { getQloo } from '@/lib/qloo/server';
 import { AreaSchema, PersonSchema } from '../route-shared';
 import { guard } from '@/lib/api/guard';
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
           model: getAnthropic().beta.messages,
           onStep: (step) => send({ type: 'step', step }),
           onPlaces: (places) => send({ type: 'places', places }),
+          scout: osmPlaceScout,
         });
         send({ type: 'group', result });
       } catch (err) {

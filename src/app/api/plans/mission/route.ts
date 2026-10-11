@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { getAnthropic } from '@/lib/ai/anthropic';
 import { MENTION_TYPES } from '@/lib/onboarding/types';
+import { osmPlaceScout } from '@/lib/plans/place-scout';
 import { PlannerDataError, runPlanner } from '@/lib/plans/planner';
 import { getQloo } from '@/lib/qloo/server';
 import { guard } from '@/lib/api/guard';
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
       try {
         const plan = await runPlanner(
           { request, mode, date, part, moods, avoidPlaceIds, ...profile },
-          { model: getAnthropic().beta.messages, qloo: getQloo(), onEvent: send },
+          { model: getAnthropic().beta.messages, qloo: getQloo(), onEvent: send, scout: osmPlaceScout },
         );
         send({ type: 'plan', plan });
       } catch (err) {

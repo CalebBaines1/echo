@@ -26,6 +26,7 @@ export function PlaceCards({ cards, dropped, picked }: { cards: PlaceCard[]; dro
             <p className="text-[11px] text-muted">
               {c.category}
               {c.matchPercent ? ` · ${c.matchPercent}% match` : ''}
+              {c.unverified ? ' · OpenStreetMap' : ''}
             </p>
             {out ? (
               <p className="text-xs font-semibold text-warn">{out}</p>

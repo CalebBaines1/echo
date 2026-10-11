@@ -61,6 +61,8 @@ export interface PlaceSummary {
   tags: string[];
   tagIds: string[];
   reasons: Reason[];
+  /** Suggested by Claude from its own knowledge, not from Qloo: no hours or match score, and worth checking. */
+  unverified?: boolean;
 }
 
 export interface MediaSummary {
