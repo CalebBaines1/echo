@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DevTools } from '@/components/dev-tools';
 import { PreferencesEditor } from '@/components/preferences-editor';
+import { StartOver } from '@/components/start-over';
 import { CheckIcon, PlugIcon, SendIcon, XIcon } from '@/components/icons';
 import { Button, Chip, Label, LinkButton, Spinner, TabBar, Why } from '@/components/ui';
 import { pendingInvite } from '@/lib/invites';
@@ -288,6 +289,7 @@ export function EchoProfileScreen() {
         </span>
         <span className="text-faint">›</span>
       </Link>
+      <StartOver />
       <DevTools />
       <TabBar current="/echo" />
 
