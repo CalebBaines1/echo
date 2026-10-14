@@ -7,7 +7,7 @@ import { AreaPicker } from '@/components/area-picker';
 import { ArrowLeftIcon, CheckIcon, MicIcon, XIcon } from '@/components/icons';
 import { Spoken } from '@/components/spoken';
 import { Button, Chip, Label, Spinner, Voice } from '@/components/ui';
-import type { ActivityCard } from '@/data/picker';
+import { activityDeck, type ActivityCard } from '@/data/picker';
 import type { PickerCard } from '@/lib/onboarding/picker';
 import type { HeardTaste } from '@/lib/onboarding/types';
 import { hobbyIdFor } from '@/lib/profile/activities';
@@ -16,6 +16,7 @@ import { EMPTY_PREFERENCES, SAMPLE_AREA, type Activity, type Area, type Preferen
 import { listenOnce, speechSupport, type Listening } from '@/lib/speech/browser-speech';
 import { loadProfile, saveProfile } from '@/lib/store';
 import { apiFetch } from '@/lib/supabase/browser';
+import { interleave } from '@/lib/variety';
 import { markSpokeToEcho } from '@/lib/voice/say';
 
 // Three steps, then straight home: what you love, where you are, what you do.
@@ -71,7 +72,8 @@ export function OnboardingClient() {
       setArea(existing.area);
     }
     post<{ cards: PickerCard[] }>('/api/picker', { action: 'seed' })
-      .then(({ cards }) => setDeck(cards))
+      // A different mix every visit, with kinds dealt in turn.
+      .then(({ cards }) => setDeck(interleave(cards, (c) => (c.type === 'author' ? 'book' : c.type))))
       .catch((err) => {
         setError((err as Error).message);
         setDeck([]);
@@ -417,6 +419,7 @@ function ActivitiesStep({ activities, onChange, onDone }: { activities: Activity
   const [answered, setAnswered] = useState<Record<string, Activity['status'] | 'no'>>(() => Object.fromEntries(activities.map((a) => [a.name, a.status])));
   const [finished, setFinished] = useState(false);
   const [custom, setCustom] = useState('');
+  const [cards] = useState(() => activityDeck(Math.random, activities.map((a) => a.name)));
 
   function answer(card: ActivityCard, a: Activity['status'] | 'no') {
     setAnswered((m) => ({ ...m, [card.name]: a }));
@@ -429,7 +432,7 @@ function ActivitiesStep({ activities, onChange, onDone }: { activities: Activity
       <Voice className="text-[1.3rem]">What do you do with a free afternoon, or wish you did?</Voice>
       {!finished ? (
         <>
-          <ActivityDeck answered={answered} onAnswer={answer} onDone={() => setFinished(true)} />
+          <ActivityDeck cards={cards} answered={answered} onAnswer={answer} onDone={() => setFinished(true)} />
           <button type="button" onClick={() => setFinished(true)} className="cursor-pointer self-center text-sm font-bold text-accent">
             That&apos;s enough
           </button>

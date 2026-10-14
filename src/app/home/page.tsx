@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Suspense, useRef, useState } from 'react';
+import { Suspense, useMemo, useRef, useState } from 'react';
 import { AreaChip } from '@/components/area-chip';
 import { MicIcon } from '@/components/icons';
 import { OneThing, currentProposal } from '@/components/one-thing';
 import { Card, Label, LinkButton, TabBar } from '@/components/ui';
 import { runUrl } from '@/lib/plans/client';
+import { exampleRequest } from '@/lib/plans/suggest';
+import { seeded } from '@/lib/variety';
 import { countdown } from '@/lib/plans/run-mission';
 import { formatTime, localDate } from '@/lib/plans/time';
 import type { Plan } from '@/lib/plans/types';
@@ -36,6 +38,8 @@ function Home() {
   const plans = useStored(loadPlans);
   const [listening, setListening] = useState(false);
   const [heard, setHeard] = useState('');
+  const [seed] = useState(() => String(Math.random()));
+  const example = useMemo(() => exampleRequest(profile, seeded(seed)).replace(/, somewhere quiet$|, under \$30$/, ''), [profile, seed]);
   const [notice, setNotice] = useState<string | null>(null);
   const listenRef = useRef<Listening | null>(null);
 
@@ -97,7 +101,7 @@ function Home() {
           <MicIcon className="size-4" />
         </button>
         <Link href="/plan/new" className="min-w-0 flex-1 truncate text-[0.9rem] text-muted">
-          {listening ? heard || 'Listening…' : '“Pottery Tuesday evening”'}
+          {listening ? heard || 'Listening…' : `“${example}”`}
         </Link>
       </div>
       {notice && (

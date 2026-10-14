@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ACTIVITY_CARDS, type ActivityCard } from '@/data/picker';
+import type { ActivityCard } from '@/data/picker';
 import type { Activity } from '@/lib/profile/types';
 import { CheckIcon, XIcon } from './icons';
 
@@ -42,8 +42,18 @@ const SWIPE_PX = 90;
  * One activity at a time: swipe right (or tap the star) for "want to try",
  * left for "not for me", or tap "I do this". Answers go to `onAnswer`.
  */
-export function ActivityDeck({ answered, onAnswer, onDone }: { answered: Record<string, Answer>; onAnswer: (card: ActivityCard, a: Answer) => void; onDone: () => void }) {
-  const queue = ACTIVITY_CARDS.filter((c) => !(c.name in answered));
+export function ActivityDeck({
+  cards,
+  answered,
+  onAnswer,
+  onDone,
+}: {
+  cards: ActivityCard[];
+  answered: Record<string, Answer>;
+  onAnswer: (card: ActivityCard, a: Answer) => void;
+  onDone: () => void;
+}) {
+  const queue = cards.filter((c) => !(c.name in answered));
   const card = queue[0];
   const next = queue[1];
   const [dx, setDx] = useState(0);
@@ -73,7 +83,7 @@ export function ActivityDeck({ answered, onAnswer, onDone }: { answered: Record<
   }
 
   const hint = dx > 30 ? 'Want to try' : dx < -30 ? 'Not for me' : null;
-  const done = ACTIVITY_CARDS.length - queue.length;
+  const done = cards.length - queue.length;
 
   return (
     <div className="flex flex-col gap-3">
@@ -136,7 +146,7 @@ export function ActivityDeck({ answered, onAnswer, onDone }: { answered: Record<
         </button>
       </div>
       <p className="text-center text-xs text-faint">
-        {done + 1} of {ACTIVITY_CARDS.length} · swipe right to try it, left to skip
+        {done + 1} of {cards.length} · swipe right to try it, left to skip
       </p>
     </div>
   );

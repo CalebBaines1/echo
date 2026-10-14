@@ -7,7 +7,8 @@ import { MicIcon } from '@/components/icons';
 import { BackHeader, Button, Label, LinkButton, Voice } from '@/components/ui';
 import { WhenChip } from '@/components/when-picker';
 import { runUrl } from '@/lib/plans/client';
-import { suggestedRequests } from '@/lib/plans/suggest';
+import { exampleRequest, suggestedRequests } from '@/lib/plans/suggest';
+import { seeded } from '@/lib/variety';
 import { defaultWhen, parseWhen, type When } from '@/lib/plans/when';
 import { listenOnce, speechSupport, type Listening } from '@/lib/speech/browser-speech';
 import { loadProfile, useStored } from '@/lib/store';
@@ -32,6 +33,11 @@ function NewPlan() {
   const [override, setOverride] = useState<When | null>(null);
   const [moods, setMoods] = useState<string[]>([]);
   const [modeChoice, setModeChoice] = useState<'hobby' | 'day' | null>(null);
+  // A fresh draw of ideas and example text each visit, steady while they type.
+  const [seed] = useState(() => String(Math.random()));
+  const [draw, setDraw] = useState(0);
+  const ideas = useMemo(() => (profile ? suggestedRequests(profile, seeded(`${seed}:${draw}`)) : []), [profile, seed, draw]);
+  const example = useMemo(() => exampleRequest(profile, seeded(seed)), [profile, seed]);
   const [listening, setListening] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const listenRef = useRef<Listening | null>(null);
@@ -99,7 +105,7 @@ function NewPlan() {
           onChange={(e) => setRequest(e.target.value)}
           rows={3}
           maxLength={400}
-          placeholder="Pottery Tuesday evening, somewhere quiet, under $40"
+          placeholder={example}
           className="min-w-0 flex-1 resize-none rounded-2xl border border-line bg-surface px-3.5 py-3 text-[0.95rem] outline-none focus:border-accent"
         />
         <button
@@ -143,9 +149,14 @@ function NewPlan() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label>Ideas for you</Label>
+        <div className="flex items-baseline justify-between">
+          <Label>Ideas for you</Label>
+          <button type="button" onClick={() => setDraw((d) => d + 1)} className="cursor-pointer text-xs font-bold text-accent">
+            More ideas
+          </button>
+        </div>
         <div className="flex flex-col gap-1.5">
-          {suggestedRequests(profile).map((s) => (
+          {ideas.map((s) => (
             <button
               key={s}
               type="button"

@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { placesToAvoid, toPlan } from '@/lib/plans/client';
+import { proposalRequest } from '@/lib/plans/suggest';
+import { daySeed, seeded } from '@/lib/variety';
 import { countdown, runMission } from '@/lib/plans/run-mission';
 import { formatTime, localDate } from '@/lib/plans/time';
 import type { Plan } from '@/lib/plans/types';
@@ -11,7 +13,6 @@ import { loadPlans, loadProfile, savePlan } from '@/lib/store';
 import { CheckIcon } from './icons';
 import { Button, Label } from './ui';
 
-const PROPOSAL_REQUEST = "Something I'd enjoy: ideally an activity I want to try, otherwise one I already do or that fits my tastes.";
 
 /** The current suggestion: today's or later, not yet turned down. */
 export function currentProposal(plans: Plan[]): Plan | undefined {
@@ -45,8 +46,10 @@ export function OneThing({ plans }: { plans: Plan[] }) {
         ...recent.flatMap((p) => p.stops.map((s) => s.placeId)),
         ...(replace ? [...replace.stops.map((s) => s.placeId), ...(replace.backup ? [replace.backup.placeId] : [])] : []),
       ];
-      const { result, steps } = await runMission({ request: PROPOSAL_REQUEST, mode: 'hobby', when, profile, avoidPlaceIds: avoid, onStatus: setStatus });
-      savePlan(toPlan(result, { mode: 'hobby', request: PROPOSAL_REQUEST, date: when.date, part: when.part, areaLabel: profile.area.label, steps, id: replace?.id, proposal: true }));
+      // Today's theme for a fresh suggestion; "Another" draws a new one.
+      const request = proposalRequest(profile, seeded(replace ? `${Date.now()}` : daySeed(profile.area.label)));
+      const { result, steps } = await runMission({ request, mode: 'hobby', when, profile, avoidPlaceIds: avoid, onStatus: setStatus });
+      savePlan(toPlan(result, { mode: 'hobby', request, date: when.date, part: when.part, areaLabel: profile.area.label, steps, id: replace?.id, proposal: true }));
     } catch (err) {
       setError((err as Error).message);
     } finally {
