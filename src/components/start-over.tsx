@@ -18,7 +18,12 @@ export function StartOver() {
     );
   }
   return (
-    <section className="flex flex-col gap-2 rounded-2xl border-2 border-warn bg-warn-soft px-3.5 py-3" role="alertdialog" aria-label="Start over">
+    <section
+      ref={(el) => el?.scrollIntoView({ block: 'center', behavior: 'smooth' })}
+      className="flex flex-col gap-2 rounded-2xl border-2 border-warn bg-warn-soft px-3.5 py-3"
+      role="alertdialog"
+      aria-label="Start over"
+    >
       <p className="text-sm font-bold text-warn">Delete your echo, plans, check-ins and friends?</p>
       <p className="text-sm">You&apos;ll start again from the beginning. This can&apos;t be undone.</p>
       {error && (
