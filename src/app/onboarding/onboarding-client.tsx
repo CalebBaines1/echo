@@ -1,26 +1,28 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ACTIVITY_CHIPS } from '@/data/picker';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityDeck } from '@/components/activity-deck';
 import { AreaPicker } from '@/components/area-picker';
-import { ArrowLeftIcon, CheckIcon, MicIcon } from '@/components/icons';
+import { ArrowLeftIcon, CheckIcon, MicIcon, XIcon } from '@/components/icons';
+import { Spoken } from '@/components/spoken';
 import { Button, Chip, Label, Spinner, Voice } from '@/components/ui';
+import type { ActivityCard } from '@/data/picker';
 import type { PickerCard } from '@/lib/onboarding/picker';
 import type { HeardTaste } from '@/lib/onboarding/types';
 import { hobbyIdFor } from '@/lib/profile/activities';
+import { buildProfile } from '@/lib/profile/build-client';
 import { EMPTY_PREFERENCES, SAMPLE_AREA, type Activity, type Area, type Preferences } from '@/lib/profile/types';
 import { listenOnce, speechSupport, type Listening } from '@/lib/speech/browser-speech';
 import { loadProfile, saveProfile } from '@/lib/store';
 import { apiFetch } from '@/lib/supabase/browser';
-import { Review } from './review';
-import { Spoken } from '@/components/spoken';
 import { markSpokeToEcho } from '@/lib/voice/say';
 
-type Step = 'pick' | 'open' | 'activities' | 'prefs' | 'area' | 'review';
-const STEPS: Step[] = ['pick', 'open', 'activities', 'prefs', 'area', 'review'];
-const TARGET = 8;
+// Three steps, then straight home: what you love, where you are, what you do.
+// Preferences have defaults and live on the profile; the profile builds in the background.
+type Step = 'pick' | 'area' | 'activities';
+const STEPS: Step[] = ['pick', 'area', 'activities'];
+const ENOUGH = 4;
 const FIRST_PAGE = 12;
 const GUESS_EVERY = 3;
 
@@ -131,28 +133,14 @@ export function OnboardingClient() {
 
   const stepIndex = STEPS.indexOf(step);
 
-  if (step === 'review') {
-    return (
-      <Review
-        heard={tastes}
-        onChange={(next) => {
-          setLoved(new Map(next.map((t) => [t.key, t])));
-          setExtra([]);
-        }}
-        activities={activities}
-        onActivitiesChange={setActivities}
-        preferences={preferences}
-        onPreferencesChange={setPreferences}
-        onKeepTalking={() => go('pick')}
-        keepLabel="Pick more"
-        onBuild={(built) => {
-          const previous = loadProfile();
-          saveProfile({ name: previous?.name, tastes: built, activities, preferences, area });
-          router.push('/echo?build=1');
-        }}
-      />
-    );
-  }
+  const finish = useCallback(() => {
+    const previous = loadProfile();
+    const profile = { ...previous, name: previous?.name, tastes, activities, preferences, area };
+    saveProfile(profile);
+    // The summary and picks are written while they look at their first suggestion.
+    void buildProfile(profile).catch(() => undefined);
+    router.push(previous?.builtAt ? '/echo' : '/home');
+  }, [tastes, activities, preferences, area, router]);
 
   return (
     <main className="flex flex-1 flex-col gap-3">
@@ -174,48 +162,47 @@ export function OnboardingClient() {
           shown={shown}
           covers={covers}
           loved={loved}
+          tastes={tastes}
           error={error}
           onToggle={toggle}
-          onMore={() => setShown((s) => s + 9)}
-          onNext={() => {
-            if (loved.size < 3) return setError('Tap at least three things you love.');
-            go('open');
+          onRemove={(key) => {
+            setLoved((m) => {
+              const next = new Map(m);
+              next.delete(key);
+              return next;
+            });
+            setExtra((e) => e.filter((t) => t.key !== key));
           }}
-        />
-      )}
-
-      {step === 'open' && (
-        <OpenStep
-          known={tastes.map((t) => t.key)}
-          added={extra}
           onAdd={(t, acts) => {
             setExtra((e) => [...e, ...t.filter((x) => !e.some((y) => y.key === x.key))]);
             setActivities((a) => [...a, ...acts.filter((x) => !a.some((y) => y.name.toLowerCase() === x.name.toLowerCase()))]);
           }}
-          onNext={() => go('activities')}
+          onMore={() => setShown((s) => s + 9)}
+          onNext={() => {
+            if (tastes.length < 3) return setError('Tap at least three things you love.');
+            go('area');
+          }}
         />
       )}
 
-      {step === 'activities' && <ActivitiesStep activities={activities} onChange={setActivities} onNext={() => go('prefs')} />}
-
-      {step === 'prefs' && <PrefsStep preferences={preferences} onChange={setPreferences} onNext={() => go('area')} />}
-
       {step === 'area' && (
         <>
-          <Voice className="text-[1.3rem]">Last thing: where should Echo look for places?</Voice>
+          <Voice className="text-[1.3rem]">Where should Echo look for places?</Voice>
           <AreaPicker
             current={area.sample ? undefined : area}
             onPick={(a) => {
               setArea(a);
-              go('review');
+              go('activities');
             }}
           />
           <div className="flex-1" />
-          <button type="button" onClick={() => go('review')} className="cursor-pointer text-center text-sm font-bold text-accent">
-            {area.sample ? 'Skip for now' : `Keep ${area.label}`}
+          <button type="button" onClick={() => go('activities')} className="cursor-pointer text-center text-sm font-bold text-accent">
+            {area.sample ? 'Use a sample city for now' : `Keep ${area.label}`}
           </button>
         </>
       )}
+
+      {step === 'activities' && <ActivitiesStep activities={activities} onChange={setActivities} onDone={finish} />}
     </main>
   );
 }
@@ -239,32 +226,41 @@ function PickStep(props: {
   shown: number;
   covers: Record<string, string>;
   loved: Map<string, HeardTaste>;
+  tastes: HeardTaste[];
   error: string | null;
   onToggle: (c: PickerCard) => void;
+  onRemove: (key: string) => void;
+  onAdd: (t: HeardTaste[], a: Activity[]) => void;
   onMore: () => void;
   onNext: () => void;
 }) {
-  const { deck, guesses, shown, covers, loved, error } = props;
-  const n = loved.size;
+  const { deck, guesses, shown, covers, loved, tastes, error } = props;
+  const n = tastes.length;
   const visible = (deck ?? []).filter((c) => !guesses.some((g) => g.key === c.key));
   const card = (c: PickerCard) => {
     const on = loved.has(c.key);
+    const kind = c.guess ? (c.reason ?? "Echo's guess") : TYPE_LABEL[c.type];
     return (
       <li key={c.key}>
         <button
           type="button"
           onClick={() => props.onToggle(c)}
           aria-pressed={on}
+          aria-label={[c.name, kind].filter(Boolean).join(', ')}
           className={`relative flex w-full cursor-pointer flex-col gap-1 rounded-2xl p-1 text-left transition-transform active:scale-[0.97] ${on ? 'bg-accent-soft ring-2 ring-accent' : ''}`}
         >
           <Cover card={c} src={c.image || covers[c.key] || undefined} />
           {on && (
-            <span className="absolute top-2.5 right-2.5 grid size-7 place-items-center rounded-full bg-accent text-accent-ink">
+            <span className="absolute top-2.5 right-2.5 grid size-7 place-items-center rounded-full bg-accent text-accent-ink" aria-hidden="true">
               <CheckIcon className="size-4" />
             </span>
           )}
-          <span className="line-clamp-2 px-0.5 text-[0.78rem] leading-tight font-bold">{c.name}</span>
-          <span className="line-clamp-1 px-0.5 text-[10.5px] text-faint">{c.guess ? (c.reason ?? "Echo's guess") : TYPE_LABEL[c.type]}</span>
+          <span className="line-clamp-2 px-0.5 text-[0.78rem] leading-tight font-bold" aria-hidden="true">
+            {c.name}
+          </span>
+          <span className="line-clamp-1 px-0.5 text-[10.5px] text-faint" aria-hidden="true">
+            {kind}
+          </span>
         </button>
       </li>
     );
@@ -289,27 +285,44 @@ function PickStep(props: {
         </Button>
       )}
 
-      <div className="sticky bottom-0 -mx-4 mt-auto flex flex-col gap-1.5 border-t border-line bg-bg/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+      <AddSomething known={tastes.map((t) => t.key)} onAdd={props.onAdd} />
+
+      <div className="sticky bottom-0 -mx-4 mt-auto flex flex-col gap-2 border-t border-line bg-bg/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+        {n > 0 && (
+          <ul className="flex max-h-[4.5rem] flex-wrap gap-1.5 overflow-y-auto" aria-label="Your picks">
+            {tastes.map((t) => (
+              <li key={t.key}>
+                <button
+                  type="button"
+                  onClick={() => props.onRemove(t.key)}
+                  aria-label={`Remove ${t.entity?.name ?? t.name}`}
+                  className="flex cursor-pointer items-center gap-1 rounded-full bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent-text"
+                >
+                  {t.entity?.name ?? t.name}
+                  <XIcon className="size-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {error && (
           <p role="status" className="text-center text-sm text-warn">
             {error}
           </p>
         )}
         <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-muted tabular-nums">
-            {Math.min(n, TARGET)} of {TARGET} things
-          </span>
+          <span className="text-sm text-muted">{n === 0 ? 'Pick a few' : n < ENOUGH ? `${n} picked · a few more helps` : `${n} picked · plenty`}</span>
           <Button kind="primary" onClick={props.onNext} className="px-6">
-            {n >= 6 ? "That's enough" : 'Next'}
+            Next
           </Button>
         </div>
-        <p className="text-center text-[10px] text-faint">Covers from Qloo, Apple, Open Library and Wikipedia.</p>
       </div>
     </>
   );
 }
 
-function OpenStep({ known, added, onAdd, onNext }: { known: string[]; added: HeardTaste[]; onAdd: (t: HeardTaste[], a: Activity[]) => void; onNext: () => void }) {
+/** "Something not here?" Typed or said, matched to Qloo, added to the picks. */
+function AddSomething({ known, onAdd }: { known: string[]; onAdd: (t: HeardTaste[], a: Activity[]) => void }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [reply, setReply] = useState<string | null>(null);
@@ -319,7 +332,7 @@ function OpenStep({ known, added, onAdd, onNext }: { known: string[]; added: Hea
 
   async function send(answer: string) {
     const t = answer.trim();
-    if (!t) return setError('Type or say something you love.');
+    if (!t) return;
     setBusy(true);
     setError(null);
     try {
@@ -356,230 +369,118 @@ function OpenStep({ known, added, onAdd, onNext }: { known: string[]; added: Hea
   }
 
   return (
-    <>
-      <Voice className="text-[1.3rem]">I&apos;d never have guessed these. What&apos;s one thing you love that wasn&apos;t in there?</Voice>
-      <p className="text-sm text-muted">A band nobody&apos;s heard of, a podcast, a game you keep going back to.</p>
+    <section className="flex flex-col gap-2 rounded-2xl border border-line bg-surface p-3">
+      <Label as="p">Something not here?</Label>
       <form
         onSubmit={(e) => {
           e.preventDefault();
           void send(text);
         }}
-        className="flex items-end gap-2"
+        className="flex items-center gap-2"
       >
-        <label htmlFor="open-answer" className="sr-only">
+        <label htmlFor="add-something" className="sr-only">
           Something you love
         </label>
         <input
-          id="open-answer"
+          id="add-something"
           value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            if (error) setError(null);
-          }}
-          placeholder="Mitski, and the Dolly Parton's America podcast"
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Mitski, the Dolly Parton's America podcast"
           maxLength={600}
-          className="min-w-0 flex-1 rounded-2xl border border-line bg-surface px-3.5 py-3 text-[0.95rem] outline-none focus:border-accent"
+          className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent"
         />
         <button
           type="button"
           onClick={dictate}
           aria-label={listening ? 'Stop listening' : 'Say it instead'}
-          className={`grid size-12 flex-none cursor-pointer place-items-center rounded-full ${listening ? 'bg-accent text-accent-ink ring-4 ring-accent-soft' : 'border border-line bg-surface'}`}
+          className={`grid size-10 flex-none cursor-pointer place-items-center rounded-full ${listening ? 'bg-accent text-accent-ink ring-4 ring-accent-soft' : 'border border-line bg-surface'}`}
         >
-          <MicIcon className="size-5" />
+          <MicIcon className="size-4" />
         </button>
+        <Button type="submit" disabled={busy || !text.trim()} className="px-3 py-2">
+          {busy ? '…' : 'Add'}
+        </Button>
       </form>
-      <Button type="button" onClick={() => send(text)} disabled={busy}>
-        {busy ? 'Adding…' : 'Add it'}
-      </Button>
       {error && (
         <p role="status" className="text-sm text-warn">
           {error}
         </p>
       )}
       {reply && <Spoken text={reply} auto />}
-      {added.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {added.map((t) => (
-            <Chip key={t.key} tone="echo">
-              {t.entity?.name ?? t.name}
-            </Chip>
-          ))}
-        </div>
-      )}
-      <div className="flex-1" />
-      <Button kind="primary" onClick={onNext}>
-        {added.length ? 'Next' : 'Skip'}
-      </Button>
-    </>
+    </section>
   );
 }
 
 const ACTIVITY_LABEL = { does: 'I do this', wants_to: 'Want to try', used_to: 'Used to' } as const;
 
-function ActivitiesStep({ activities, onChange, onNext }: { activities: Activity[]; onChange: (a: Activity[]) => void; onNext: () => void }) {
+function ActivitiesStep({ activities, onChange, onDone }: { activities: Activity[]; onChange: (a: Activity[]) => void; onDone: () => void }) {
+  const [answered, setAnswered] = useState<Record<string, Activity['status'] | 'no'>>(() => Object.fromEntries(activities.map((a) => [a.name, a.status])));
+  const [finished, setFinished] = useState(false);
   const [custom, setCustom] = useState('');
-  const statusOf = (name: string) => activities.find((a) => a.name.toLowerCase() === name.toLowerCase())?.status;
 
-  function cycle(name: string, hobbyId?: string) {
-    const current = statusOf(name);
-    const rest = activities.filter((a) => a.name.toLowerCase() !== name.toLowerCase());
-    const next: Activity['status'] | undefined = current === undefined ? 'does' : current === 'does' ? 'wants_to' : undefined;
-    onChange(next ? [...rest, { name, status: next, hobbyId: hobbyId ?? hobbyIdFor(name) }] : rest);
+  function answer(card: ActivityCard, a: Activity['status'] | 'no') {
+    setAnswered((m) => ({ ...m, [card.name]: a }));
+    const rest = activities.filter((x) => x.name.toLowerCase() !== card.name.toLowerCase());
+    onChange(a === 'no' ? rest : [...rest, { name: card.name, status: a, hobbyId: card.hobbyId ?? hobbyIdFor(card.name) }]);
   }
-
-  const extras = activities.filter((a) => !ACTIVITY_CHIPS.some((c) => c.name.toLowerCase() === a.name.toLowerCase()));
 
   return (
     <>
       <Voice className="text-[1.3rem]">What do you do with a free afternoon, or wish you did?</Voice>
-      <p className="text-sm text-muted">Tap once if you do it, twice if you want to try it.</p>
-      <ul className="flex flex-wrap gap-2">
-        {[...ACTIVITY_CHIPS, ...extras.map((a) => ({ name: a.name, hobbyId: a.hobbyId }))].map((c) => {
-          const s = statusOf(c.name);
-          return (
-            <li key={c.name}>
-              <button
-                type="button"
-                onClick={() => cycle(c.name, c.hobbyId)}
-                className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-2 text-sm ${
-                  s === 'does' ? 'border-transparent bg-accent text-accent-ink' : s ? 'border-transparent bg-echo-soft text-echo' : 'border-line bg-surface'
-                }`}
-              >
-                {c.name}
-                {s && <span className="text-[11px] opacity-90">{ACTIVITY_LABEL[s]}</span>}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const name = custom.trim().toLowerCase();
-          if (!name) return;
-          if (!statusOf(name)) onChange([...activities, { name, status: 'does', hobbyId: hobbyIdFor(name) }]);
-          setCustom('');
-        }}
-        className="flex gap-2"
-      >
-        <label htmlFor="custom-activity" className="sr-only">
-          Add an activity
-        </label>
-        <input
-          id="custom-activity"
-          value={custom}
-          onChange={(e) => setCustom(e.target.value)}
-          placeholder="Something else, like bouldering"
-          maxLength={60}
-          className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent"
-        />
-        <Button type="submit">Add</Button>
-      </form>
-      <div className="flex-1" />
-      <Button kind="primary" onClick={onNext}>
-        Next
-      </Button>
-    </>
-  );
-}
-
-function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value?: T; options: Array<{ id: T; label: string }>; onChange: (v: T) => void }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label as="p">{label}</Label>
-      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }} role="radiogroup" aria-label={label}>
-        {options.map((o) => (
-          <button
-            key={o.id}
-            type="button"
-            role="radio"
-            aria-checked={value === o.id}
-            onClick={() => onChange(o.id)}
-            className={`cursor-pointer rounded-xl border px-2 py-2.5 text-sm font-semibold ${value === o.id ? 'border-accent bg-accent text-accent-ink' : 'border-line bg-surface'}`}
-          >
-            {o.label}
+      {!finished ? (
+        <>
+          <ActivityDeck answered={answered} onAnswer={answer} onDone={() => setFinished(true)} />
+          <button type="button" onClick={() => setFinished(true)} className="cursor-pointer self-center text-sm font-bold text-accent">
+            That&apos;s enough
           </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const DISTANCES = [1, 3, 5, 10, 20];
-
-function PrefsStep({ preferences: p, onChange, onNext }: { preferences: Preferences; onChange: (p: Preferences) => void; onNext: () => void }) {
-  const budget = p.budget ?? 150;
-  return (
-    <>
-      <Voice className="text-[1.3rem]">How do you like to go out?</Voice>
-      <Segmented
-        label="Company"
-        value={p.company}
-        options={[
-          { id: 'solo', label: 'Solo' },
-          { id: 'group', label: 'With people' },
-          { id: 'either', label: 'Either' },
-        ]}
-        onChange={(company) => onChange({ ...p, company })}
-      />
-      <Segmented
-        label="Setting"
-        value={p.setting}
-        options={[
-          { id: 'indoor', label: 'Indoors' },
-          { id: 'outdoor', label: 'Outdoors' },
-          { id: 'either', label: 'Either' },
-        ]}
-        onChange={(setting) => onChange({ ...p, setting })}
-      />
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-baseline justify-between">
-          <Label as="p">Budget per outing</Label>
-          <span className="text-sm font-bold tabular-nums">{budget >= 150 ? 'No limit' : `$${budget}`}</span>
-        </div>
-        <label htmlFor="budget" className="sr-only">
-          Budget per outing in dollars
-        </label>
-        <input
-          id="budget"
-          type="range"
-          min={0}
-          max={150}
-          step={5}
-          value={budget}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            onChange({ ...p, budget: v >= 150 ? undefined : v });
-          }}
-          className="w-full accent-[var(--accent)]"
-        />
-        <p className="text-xs text-faint">Places show $ to $$$$: $ is under $15, $$ about $15–40, $$$ about $40–80.</p>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label as="p">How far you&apos;ll go</Label>
-        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="How far you'll go">
-          {DISTANCES.map((d) => (
-            <button
-              key={d}
-              type="button"
-              role="radio"
-              aria-checked={p.maxMiles === d}
-              onClick={() => onChange({ ...p, maxMiles: d })}
-              className={`cursor-pointer rounded-full border px-3.5 py-1.5 text-sm font-semibold ${p.maxMiles === d ? 'border-accent bg-accent text-accent-ink' : 'border-line bg-surface'}`}
-            >
-              {d} mi
-            </button>
-          ))}
-        </div>
-      </div>
+        </>
+      ) : (
+        <>
+          {activities.length > 0 ? (
+            <ul className="flex flex-wrap gap-1.5">
+              {activities.map((a) => (
+                <li key={a.name}>
+                  <Chip tone={a.status === 'wants_to' ? 'echo' : 'accent'}>
+                    {a.name}
+                    <span className="text-[11px] opacity-80">{ACTIVITY_LABEL[a.status]}</span>
+                  </Chip>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted">Nothing yet. That&apos;s fine; Echo will suggest things to try.</p>
+          )}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = custom.trim().toLowerCase();
+              if (!name) return;
+              if (!activities.some((a) => a.name.toLowerCase() === name)) onChange([...activities, { name, status: 'wants_to', hobbyId: hobbyIdFor(name) }]);
+              setCustom('');
+            }}
+            className="flex gap-2"
+          >
+            <label htmlFor="custom-activity" className="sr-only">
+              Something else you want to try
+            </label>
+            <input
+              id="custom-activity"
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              placeholder="Something else you'd try, like salsa"
+              maxLength={60}
+              className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent"
+            />
+            <Button type="submit">Add</Button>
+          </form>
+        </>
+      )}
       <div className="flex-1" />
-      <Button kind="primary" onClick={onNext}>
-        Next
-      </Button>
-      <Link href="#" onClick={(e) => (e.preventDefault(), onNext())} className="text-center text-sm font-bold text-accent">
-        Skip
-      </Link>
+      {finished && (
+        <Button kind="primary" onClick={onDone}>
+          Show me what to do
+        </Button>
+      )}
     </>
   );
 }

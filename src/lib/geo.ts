@@ -9,7 +9,7 @@ import type { Area } from '@/lib/profile/types';
 const BASE = 'https://nominatim.openstreetmap.org';
 const USER_AGENT = 'Echo/0.1 (Qloo hackathon app; https://github.com/CalebBaines1)';
 const waitForTurn = createSpacer(1100);
-const cache = new Map<string, Area[]>();
+const cache = new Map<string, AreaResult[]>();
 
 /** Coordinates rounded to about a kilometre, so exact addresses are never stored. */
 export function roundCoord(n: number): number {
@@ -50,17 +50,30 @@ async function get(path: string): Promise<unknown> {
   return res.json();
 }
 
-export async function searchAreas(query: string): Promise<Area[]> {
+/** "California, United States": shown under search results so same-named places can be told apart. Not stored. */
+function regionFor(p: NominatimPlace): string | undefined {
+  const a = p.address ?? {};
+  return [a.state ?? a.province ?? a.region, a.country].filter(Boolean).join(', ') || undefined;
+}
+
+export type AreaResult = Area & { region?: string };
+
+export async function searchAreas(query: string): Promise<AreaResult[]> {
   const q = query.trim().toLowerCase();
   const hit = cache.get(`s:${q}`);
   if (hit) return hit;
   const body = (await get(`/search?format=jsonv2&addressdetails=1&limit=5&q=${encodeURIComponent(q)}`)) as NominatimPlace[];
   const seen = new Set<string>();
-  const areas = body.map(toArea).filter((a): a is Area => {
-    if (!a || seen.has(a.label)) return false;
-    seen.add(a.label);
-    return true;
-  });
+  const areas = body
+    .map((p): AreaResult | null => {
+      const a = toArea(p);
+      return a ? { ...a, region: regionFor(p) } : null;
+    })
+    .filter((a): a is AreaResult => {
+      if (!a || seen.has(`${a.label}|${a.region}`)) return false;
+      seen.add(`${a.label}|${a.region}`);
+      return true;
+    });
   cache.set(`s:${q}`, areas);
   return areas;
 }

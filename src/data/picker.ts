@@ -48,18 +48,27 @@ export const PICKER_SEEDS: Array<{ name: string; type: MentionType }> = [
   { name: 'Conan O’Brien Needs a Friend', type: 'podcast' },
 ];
 
-/** Activity chips for onboarding. hobbyId links to a place category when there is one. */
-export const ACTIVITY_CHIPS: Array<{ name: string; hobbyId?: string }> = [
-  { name: 'pottery', hobbyId: 'pottery' },
-  { name: 'board games', hobbyId: 'board_games' },
-  { name: 'climbing', hobbyId: 'climbing' },
-  { name: 'record shopping', hobbyId: 'records' },
-  { name: 'reading', hobbyId: 'books' },
-  { name: 'drawing and painting', hobbyId: 'art' },
-  { name: 'indie film', hobbyId: 'film' },
-  { name: 'live music', hobbyId: 'live_music' },
-  { name: 'hiking' },
-  { name: 'cooking' },
-  { name: 'yoga' },
-  { name: 'photography' },
+export interface ActivityCard {
+  name: string;
+  hobbyId?: string;
+  /** Wikipedia article whose lead photo illustrates the card. */
+  wiki: string;
+  emoji: string;
+  blurb: string;
+}
+
+/** The activity swipe deck in onboarding. hobbyId links to a place category Echo can plan. */
+export const ACTIVITY_CARDS: ActivityCard[] = [
+  { name: 'pottery', hobbyId: 'pottery', wiki: 'Pottery', emoji: '🏺', blurb: 'Wheel throwing or hand building at a studio.' },
+  { name: 'climbing', hobbyId: 'climbing', wiki: 'Bouldering', emoji: '🧗', blurb: 'Bouldering and ropes at an indoor gym.' },
+  { name: 'board games', hobbyId: 'board_games', wiki: 'Board game', emoji: '🎲', blurb: 'Game cafés and game nights.' },
+  { name: 'live music', hobbyId: 'live_music', wiki: 'Concert', emoji: '🎸', blurb: 'Small venues, local bands, open mics.' },
+  { name: 'record shopping', hobbyId: 'records', wiki: 'Record shop', emoji: '💿', blurb: 'Digging through crates for vinyl.' },
+  { name: 'drawing and painting', hobbyId: 'art', wiki: 'Watercolor painting', emoji: '🎨', blurb: 'Sketching, watercolor, art classes.' },
+  { name: 'indie film', hobbyId: 'film', wiki: 'Movie theater', emoji: '🎬', blurb: 'Small cinemas and screenings.' },
+  { name: 'reading', hobbyId: 'books', wiki: 'Bookselling', emoji: '📚', blurb: 'Bookshops, reading spots, book clubs.' },
+  { name: 'hiking', wiki: 'Hiking', emoji: '🥾', blurb: 'Trails and day hikes nearby.' },
+  { name: 'cooking', wiki: 'Cooking', emoji: '🍳', blurb: 'Cooking classes and trying new recipes.' },
+  { name: 'yoga', wiki: 'Yoga as exercise', emoji: '🧘', blurb: 'Studios and drop-in classes.' },
+  { name: 'photography', wiki: 'Photography', emoji: '📷', blurb: 'Photo walks and film cameras.' },
 ];

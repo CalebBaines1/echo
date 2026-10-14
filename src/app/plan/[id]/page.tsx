@@ -43,7 +43,7 @@ export default function PlanPage() {
   const past = !!plan.date && plan.date < localDate(new Date());
   const checkInUrl = typeof window === 'undefined' ? '' : `${window.location.origin}/plan/${plan.id}/checkin`;
   const gcal = googleCalendarUrl(plan, checkInUrl);
-  const why = (plan.dropped ?? []).filter((d) => d.reason).slice(0, 2);
+  const why = (plan.dropped ?? []).filter((d) => d.reason).slice(0, 4);
 
   function flash(text: string) {
     setToast(text);
@@ -56,7 +56,7 @@ export default function PlanPage() {
 
   function commit() {
     update({ ...plan!, status: 'approved' });
-    flash(`You're in. Echo will check in after${when ? ` ${whenLabel(when).toLowerCase()}` : ''}.`);
+    flash(`You're in. Add it to your calendar and Echo's check-in comes with the reminder.`);
   }
 
   function icsFile() {
@@ -123,20 +123,6 @@ export default function PlanPage() {
         </Link>
       )}
 
-      {why.length > 0 && (
-        <section className="flex flex-col gap-1.5 rounded-2xl bg-sunk px-3.5 py-3">
-          <Label>Why this one</Label>
-          {why.map((d) => (
-            <p key={d.name} className="flex items-start gap-2 text-[0.82rem] leading-snug">
-              <XIcon className="mt-0.5 size-3.5 flex-none text-warn" />
-              <span>
-                <span className="font-semibold">{d.name}</span>: {d.reason}
-              </span>
-            </p>
-          ))}
-        </section>
-      )}
-
       {plan.stops.map((s) => (
         <StopCard key={s.placeId} stop={s} members={plan.group?.members} />
       ))}
@@ -161,45 +147,41 @@ export default function PlanPage() {
           {when || first?.time ? ` · ${[when ? whenLabel(when) : '', first?.time ? formatTime(first.time) : ''].filter(Boolean).join(', ')}` : ''}
         </Button>
       ) : (
-        <p className="flex items-center justify-center gap-1.5 rounded-2xl bg-echo-soft px-4 py-3 text-sm font-bold text-echo">
-          <CheckIcon className="size-4" /> You&apos;re in
-        </p>
-      )}
-
-      <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line bg-surface">
-        {gcal && (
-          <li>
-            <a href={gcal} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3.5 py-2.5 text-[0.85rem]">
-              <CalendarIcon className="size-4 text-muted" /> Add to Google Calendar
-            </a>
-          </li>
-        )}
-        {plan.date && first?.time && (
-          <li>
-            <button type="button" onClick={icsFile} className="flex w-full cursor-pointer items-center gap-2 px-3.5 py-2.5 text-left text-[0.85rem]">
-              <CalendarIcon className="size-4 text-muted" /> Apple or other calendar (.ics)
-            </button>
-          </li>
-        )}
-        {plan.actions
-          .filter((a) => a.kind !== 'calendar')
-          .map((a) => {
-            const Icon = ICON[a.kind];
-            return (
-              <li key={a.id}>
-                <button type="button" onClick={() => run(a)} className="flex w-full cursor-pointer items-center justify-between gap-2 px-3.5 py-2.5 text-left text-[0.85rem]">
-                  <span className="flex items-center gap-2">
-                    <Icon className="size-4 text-muted" /> {a.label}
-                  </span>
-                  {a.status === 'done' && <CheckIcon className="size-4 text-echo" />}
-                </button>
+        <>
+          <p className="flex items-center justify-center gap-1.5 rounded-2xl bg-echo-soft px-4 py-3 text-sm font-bold text-echo">
+            <CheckIcon className="size-4" /> You&apos;re in
+          </p>
+          {/* Once they're in: get it on the calendar, bring someone, find the place. */}
+          <ul className="flex flex-col divide-y divide-line rounded-2xl border border-line bg-surface">
+            {(gcal || (plan.date && first?.time)) && (
+              <li>
+                <CalendarButton google={gcal} onFile={plan.date && first?.time ? icsFile : undefined} />
               </li>
-            );
-          })}
-      </ul>
+            )}
+            {plan.actions
+              // Solo plans share through the answerable link below instead of a plain message.
+              .filter((a) => a.kind !== 'calendar' && !(a.kind === 'message' && plan.mode !== 'group'))
+              .map((a) => {
+                const Icon = ICON[a.kind];
+                return (
+                  <li key={a.id}>
+                    <button type="button" onClick={() => run(a)} className="flex w-full cursor-pointer items-center justify-between gap-2 px-3.5 py-2.5 text-left text-[0.85rem]">
+                      <span className="flex items-center gap-2">
+                        <Icon className="size-4 text-muted" /> {a.label}
+                      </span>
+                      {a.status === 'done' && <CheckIcon className="size-4 text-echo" />}
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
+          {plan.mode !== 'group' && <ShareLink plan={plan} onShared={(token) => update({ ...plan, share: { token } })} />}
+          {plan.mode === 'hobby' && (
+            <LinkButton href={`/plan/${plan.id}/hobby`}>{plan.hobbyWeeks ? 'See your six-week plan' : 'Turn this into a six-week plan'}</LinkButton>
+          )}
+        </>
+      )}
       <p className="text-center text-xs text-faint">Echo never books, pays, or sends anything without your OK.</p>
-
-      {plan.mode !== 'group' && <ShareLink plan={plan} onShared={(token) => update({ ...plan, share: { token } })} />}
 
       {plan.group && (
         <section className="flex flex-col gap-2">
@@ -219,48 +201,62 @@ export default function PlanPage() {
       )}
 
       {plan.mode !== 'group' && when && (
-        <section className="flex flex-col gap-2">
-          <Label>Change something</Label>
-          <div className="flex flex-wrap gap-1.5">
-            {QUICK_CHANGES.map((q) => (
-              <button key={q} type="button" onClick={() => rerun(q)} className="cursor-pointer rounded-full border border-line px-3 py-1.5 text-sm hover:border-accent">
-                {q}
-              </button>
-            ))}
-          </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              rerun(change);
-            }}
-            className="flex gap-2"
-          >
-            <label htmlFor="change" className="sr-only">
-              What to change
-            </label>
-            <input
-              id="change"
-              value={change}
-              onChange={(e) => {
-                setChange(e.target.value);
-                if (changeError) setChangeError(null);
+        <details className="rounded-2xl border border-line bg-surface px-3.5 py-3">
+          <summary className="cursor-pointer text-[0.9rem] font-bold">Not quite? Change something</summary>
+          <div className="mt-3 flex flex-col gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {QUICK_CHANGES.map((q) => (
+                <button key={q} type="button" onClick={() => rerun(q)} className="cursor-pointer rounded-full border border-line px-3 py-1.5 text-sm hover:border-accent">
+                  {q}
+                </button>
+              ))}
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                rerun(change);
               }}
-              placeholder="After 6pm, and not a class"
-              maxLength={160}
-              className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent"
-            />
-            <Button type="submit">Redo</Button>
-          </form>
-          {changeError && (
-            <p role="status" className="text-sm text-warn">
-              {changeError}
-            </p>
-          )}
-        </section>
+              className="flex gap-2"
+            >
+              <label htmlFor="change" className="sr-only">
+                What to change
+              </label>
+              <input
+                id="change"
+                value={change}
+                onChange={(e) => {
+                  setChange(e.target.value);
+                  if (changeError) setChangeError(null);
+                }}
+                placeholder="After 6pm, and not a class"
+                maxLength={160}
+                className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none focus:border-accent"
+              />
+              <Button type="submit">Redo</Button>
+            </form>
+            {changeError && (
+              <p role="status" className="text-sm text-warn">
+                {changeError}
+              </p>
+            )}
+          </div>
+        </details>
       )}
 
-      {plan.mode === 'hobby' && (
-        <LinkButton href={`/plan/${plan.id}/hobby`}>{plan.hobbyWeeks ? 'See your six-week plan' : 'Turn this into a six-week plan'}</LinkButton>
+      {why.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-sm font-bold text-muted">What Echo set aside</summary>
+          <div className="mt-2 flex flex-col gap-1.5">
+            {why.map((d) => (
+              <p key={d.name} className="flex items-start gap-2 text-[0.82rem] leading-snug">
+                <XIcon className="mt-0.5 size-3.5 flex-none text-warn" />
+                <span>
+                  <span className="font-semibold">{d.name}</span>: {d.reason}
+                </span>
+              </p>
+            ))}
+          </div>
+        </details>
       )}
 
       {plan.group && plan.group.exchange.length > 0 && (
@@ -294,5 +290,57 @@ export default function PlanPage() {
         </p>
       )}
     </main>
+  );
+}
+
+/**
+ * One "Add to calendar" button. A web page can't open someone's default
+ * calendar, so: Apple devices get the .ics file straight away (it opens in
+ * Calendar); everyone else picks Google or a file for Outlook and others.
+ */
+function CalendarButton({ google, onFile }: { google?: string | null; onFile?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const apple = typeof navigator !== 'undefined' && /iPhone|iPad|Macintosh/.test(navigator.userAgent);
+  const row = 'flex w-full cursor-pointer items-center gap-2 px-3.5 py-2.5 text-left text-[0.85rem]';
+
+  if (apple && onFile) {
+    return (
+      <button type="button" onClick={onFile} className={row}>
+        <CalendarIcon className="size-4 text-muted" /> Add to calendar
+      </button>
+    );
+  }
+  if (!onFile && google) {
+    return (
+      <a href={google} target="_blank" rel="noreferrer" className={row}>
+        <CalendarIcon className="size-4 text-muted" /> Add to Google Calendar
+      </a>
+    );
+  }
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={row}>
+        <CalendarIcon className="size-4 text-muted" /> Add to calendar
+      </button>
+      {open && (
+        <div className="flex gap-2 px-3.5 pb-3">
+          {google && (
+            <a href={google} target="_blank" rel="noreferrer" onClick={() => setOpen(false)} className="rounded-full border border-line px-3 py-1.5 text-sm font-semibold">
+              Google
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onFile?.();
+            }}
+            className="cursor-pointer rounded-full border border-line px-3 py-1.5 text-sm font-semibold"
+          >
+            Apple, Outlook, other
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

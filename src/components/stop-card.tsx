@@ -1,4 +1,6 @@
-import { formatTime } from '@/lib/plans/time';
+import { formatHours, formatTime } from '@/lib/plans/time';
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 import type { GroupMember, PlanStop } from '@/lib/plans/types';
 import { Card, Why } from './ui';
 
@@ -6,7 +8,7 @@ const PRICE = ['', '$', '$$', '$$$', '$$$$'];
 
 export function StopCard({ stop, label, members }: { stop: PlanStop; label?: string; members?: GroupMember[] }) {
   const meta = [
-    stop.hoursThatDay && (stop.hoursThatDay === 'Closed' ? 'Closed that day' : `Open ${stop.hoursThatDay.replace(/-/g, '–')}`),
+    stop.hoursThatDay && (stop.hoursThatDay === 'Closed' ? 'Closed that day' : `Open ${formatHours(stop.hoursThatDay)}`),
     stop.priceLevel ? PRICE[stop.priceLevel] : undefined,
     stop.category,
   ].filter(Boolean);
@@ -22,7 +24,7 @@ export function StopCard({ stop, label, members }: { stop: PlanStop; label?: str
       </div>
       {meta.length > 0 && <p className="text-[0.8rem] text-muted">{meta.join(' · ')}</p>}
       {stop.unverified && <p className="text-[0.8rem] text-muted">From OpenStreetMap while Qloo data is off here.{stop.hoursThatDay ? '' : ' Check hours before you go.'}</p>}
-      {stop.why && <Why>{stop.matchPercent && !fits.length ? `${stop.matchPercent}% match · ${stop.why}` : stop.why}</Why>}
+      {stop.why && <Why>{stop.matchPercent && !fits.length ? `${stop.matchPercent}% match · ${stop.why}` : capitalize(stop.why)}</Why>}
       {fits.length > 0 && (
         <div className="mt-2 flex flex-col gap-1" aria-label="How well this fits each person">
           {fits.map((m) => (

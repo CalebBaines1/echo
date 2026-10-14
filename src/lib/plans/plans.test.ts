@@ -4,7 +4,15 @@ import { hobbyIdFor } from '@/lib/profile/activities';
 import type { MediaSummary, PlaceSummary } from '@/lib/qloo/types';
 import { personalFit } from './group';
 import { buildIcs } from './ics';
-import { formatTime, hoursOn, isOpenAt, nextSaturday, weekdayOf } from './time';
+import { formatHours, formatTime, hoursOn, isOpenAt, nextSaturday, weekdayOf } from './time';
+
+describe('formatHours', () => {
+  it('reads like a person would say it', () => {
+    expect(formatHours('11:00-22:00')).toBe('11am–10pm');
+    expect(formatHours('09:30-14:00, 17:00-24:00')).toBe('9:30am–2pm, 5pm–midnight');
+    expect(formatHours('00:00-24:00')).toBe('all day');
+  });
+});
 
 describe('time helpers', () => {
   it('reads weekdays from calendar dates', () => {

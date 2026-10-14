@@ -11,7 +11,7 @@ import { loadPlans, loadProfile, savePlan } from '@/lib/store';
 import { CheckIcon } from './icons';
 import { Button, Label } from './ui';
 
-const PROPOSAL_REQUEST = 'Something I would enjoy, based on my tastes and the activities I do or want to try.';
+const PROPOSAL_REQUEST = "Something I'd enjoy: ideally an activity I want to try, otherwise one I already do or that fits my tastes.";
 
 /** The current suggestion: today's or later, not yet turned down. */
 export function currentProposal(plans: Plan[]): Plan | undefined {

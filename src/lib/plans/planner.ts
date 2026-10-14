@@ -64,7 +64,7 @@ Rules:
 - Every place in a plan must come from a find_places result in this conversation. Never invent places, opening hours, prices, classes, events, or schedules.
 - Results with a "source" field come from OpenStreetMap, used while Qloo has no data for the area: real places with no match score, and hours only when listed. Prefer Qloo results when you have both, judge fit from the name and kind, and when hours are unknown pick ordinary times and mention that hours are worth checking.
 - Place results include distance in miles, a price level from 1 to 4 when known (often missing), opening hours for the plan's day when known, and a match score showing how well the place fits their taste.
-- Respect their limits: distance, budget (treat price level 1 as under $15, 2 as $15-40, 3 as $40-80, 4 as over $80, and don't rule a place out just because price is unknown), the time window, any moods they picked, and notes such as "prefers quiet places".
+- Respect their limits: budget (treat price level 1 as under $15, 2 as $15-40, 3 as $40-80, 4 as over $80, and don't rule a place out just because price is unknown), the time window, any moods they picked, and notes such as "prefers quiet places".
 
 How to work:
 1. Pick three or four candidate categories that fit the request. Favor activities they want to try or already do, then categories that fit their tastes. Use the category ids listed below. If an activity isn't listed, call search_categories to find a place category tag for it.
@@ -72,10 +72,15 @@ How to work:
 3. Use rule_out for each option you set aside, with a short, specific reason (for example "closed on Tuesday evenings" or "loud basement bar with DJs; not quiet"). Name the place exactly as find_places did.
 4. Call finish_plan.
 
+What they ask for comes first. If the request or their "want to try" list names an activity, plan that activity. Places marked beyond_usual_distance are past their usual range: pick one only when it's the thing they asked for or want to try and nothing closer fits, and say how far it is in the summary ("it's 6 miles, a bit farther than usual"). Never quietly swap what they asked for for something else; if nothing fits at all, say so in the summary and offer the closest alternative.
+
+Drop results that don't belong in their category or don't suit an adult outing (a golf course listed as a café, a children's store for an adult) with rule_out.
+
 For a hobby mission: one main stop plus a backup from a different category. For a full day: three or four stops in a sensible order with realistic times, mostly close together. Every time must fall inside the time window and within the place's opening hours when hours are known.
 
 Writing:
 - summary is spoken to the person: one or two sentences, under 35 words, second person, no lists.
+- Write times for people in 12-hour form ("6pm", "10:30pm"), never 24-hour, in summary, why and rule_out reasons. finish_plan times stay HH:MM.
 - why is a short phrase linking the place to their taste, such as "quiet, small-group vibe; fits your craft side".
 - If class times matter, say to check the place's website rather than guessing.
 
@@ -176,7 +181,7 @@ function describeProfile(input: PlannerInput): string {
     p.company && `prefers going ${p.company === 'either' ? 'solo or with people' : p.company === 'solo' ? 'solo' : 'with people'}`,
     p.setting && `setting: ${p.setting}`,
     p.budget !== undefined && `budget about $${p.budget} per outing`,
-    p.maxMiles !== undefined && `will travel up to ${p.maxMiles} miles`,
+    p.maxMiles !== undefined && `usually travels up to ${p.maxMiles} miles`,
     ...p.notes,
   ].filter(Boolean);
   return [
@@ -188,7 +193,8 @@ function describeProfile(input: PlannerInput): string {
     `Area: ${input.area.label}`,
     `Tastes: ${input.tastes.map((t) => t.entity?.name ?? t.name).join(', ') || 'none yet'}`,
     `Traits: ${input.traits?.join(', ') || 'unknown'}`,
-    `Activities: ${input.activities.map((a) => `${a.name} (${a.status.replace('_', ' ')})`).join(', ') || 'none mentioned'}`,
+    `Wants to try: ${input.activities.filter((a) => a.status === 'wants_to').map((a) => a.name).join(', ') || 'nothing named'}`,
+    `Already does: ${input.activities.filter((a) => a.status !== 'wants_to').map((a) => a.name).join(', ') || 'nothing named'}`,
     `Preferences: ${prefs.join('; ') || 'none stated'}`,
   ]
     .filter(Boolean)
@@ -252,17 +258,35 @@ export async function runPlanner(
     const label = known?.places ?? categoryArg.split(':').pop()!.replace(/_/g, ' ');
     status(`Searching ${label} near ${input.area.label}`);
 
-    let places: PlaceSummary[];
-    try {
-      places = await deps.qloo.findPlaces({
+    const search = (radius: number) =>
+      deps.qloo.findPlaces({
         near: { lat: input.area.lat, lon: input.area.lon },
         tags: [tag],
         // Moods boost matching places instead of filtering everything else out.
         signals: { entities: ids, tags: moodTags.length ? moodTags : undefined },
-        radiusMeters,
+        radiusMeters: radius,
         take: 5,
         explain: true,
       });
+    let places: PlaceSummary[];
+    try {
+      places = await search(radiusMeters);
+      // Nothing close: look twice as far rather than giving up on what they asked for.
+      if (!places.some((p) => !avoid.has(p.id))) {
+        const wider = await search(radiusMeters * 2).catch(() => []);
+        if (wider.length) {
+          places = wider;
+          emit({ kind: 'info', text: `Nothing close, so I looked farther for ${label}` });
+        }
+      }
+      // Qloo has nothing at all for this category here: real places from OpenStreetMap instead.
+      if (!places.length && deps.scout) {
+        const scouted = await scout(known?.id, label);
+        if (scouted.length) {
+          places = scouted;
+          emit({ kind: 'info', text: `Qloo had no ${label} here, so I checked OpenStreetMap` });
+        }
+      }
     } catch (err) {
       const offline = err instanceof QlooOfflineError || err instanceof QlooBudgetError;
       // No Qloo data: ask Claude for places it knows, marked unverified.
@@ -277,11 +301,13 @@ export async function runPlanner(
       }
     }
 
-    const limit = maxMiles ?? Infinity;
+    // Up to twice their usual distance is allowed but flagged; the planner only goes there for something they asked for.
+    const limit = maxMiles ? maxMiles * 2 : Infinity;
+    const usual = maxMiles ?? radiusMeters / METERS_PER_MILE;
     const recent = places.filter((p) => avoid.has(p.id));
     const usable = places.filter((p) => !avoid.has(p.id) && (p.distanceMeters === undefined || p.distanceMeters / METERS_PER_MILE <= limit));
     emit(usable.length ? { kind: 'ok', text: usable.length === 1 ? `Found one of the ${label} near you` : `Found ${usable.length} ${label} near you` } : { kind: 'info', text: `No ${label} within reach` });
-    if (recent.length) emit({ kind: 'info', text: `Skipped ${recent.map((p) => p.name).join(', ')}: you've been recently` });
+    if (recent.length) emit({ kind: 'info', text: `Skipped ${recent.map((p) => p.name).join(', ')}: already in your plans` });
 
     const cards: PlaceCard[] = [];
     const rows = usable.map((p) => {
@@ -306,6 +332,7 @@ export async function runPlanner(
         price_level: p.priceLevel ?? null,
         [`hours_${day}`]: hoursThatDay ?? 'unknown',
         match: p.affinity !== undefined ? Math.round(p.affinity * 100) : null,
+        ...(p.distanceMeters !== undefined && p.distanceMeters / METERS_PER_MILE > usual ? { beyond_usual_distance: true } : {}),
         matches_tastes: tasteReasons,
         tags: p.tags.slice(0, 5),
         description: p.description ?? null,

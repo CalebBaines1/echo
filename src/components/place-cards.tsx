@@ -29,11 +29,11 @@ export function PlaceCards({ cards, dropped, picked }: { cards: PlaceCard[]; dro
               {c.unverified ? ' · OpenStreetMap' : ''}
             </p>
             {out ? (
-              <p className="text-xs font-semibold text-warn">{out}</p>
+              <p className="text-xs font-semibold text-warn">{out.charAt(0).toUpperCase() + out.slice(1)}</p>
             ) : chosen ? (
               <p className="text-xs font-semibold text-echo">Echo's pick</p>
             ) : c.reason ? (
-              <p className="text-xs text-echo">{c.reason}</p>
+              <p className="text-xs text-echo">{c.reason.charAt(0).toUpperCase() + c.reason.slice(1)}</p>
             ) : null}
           </li>
         );

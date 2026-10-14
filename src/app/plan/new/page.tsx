@@ -31,12 +31,15 @@ function NewPlan() {
   const [request, setRequest] = useState('');
   const [override, setOverride] = useState<When | null>(null);
   const [moods, setMoods] = useState<string[]>([]);
+  const [modeChoice, setModeChoice] = useState<'hobby' | 'day' | null>(null);
   const [listening, setListening] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const listenRef = useRef<Listening | null>(null);
 
   const parsed = useMemo(() => parseWhen(request), [request]);
-  const when = override ?? parsed ?? defaultWhen('hobby');
+  // "A full day" when they say so, or pick it; otherwise one thing to do.
+  const mode = modeChoice ?? (/\b(full|whole|all)[ -]day\b|\bday out\b/i.test(request) ? 'day' : 'hobby');
+  const when = override ?? parsed ?? defaultWhen(mode);
 
   if (profile === undefined) return null;
   if (!profile) {
@@ -156,13 +159,31 @@ function NewPlan() {
       </div>
 
       <div className="flex-1" />
-      <div className="grid grid-cols-2 gap-2">
-        <Button kind="primary" onClick={() => go('hobby')}>
-          Try a new hobby
-        </Button>
-        <Button onClick={() => go('day')}>Plan a full day</Button>
+      <div className="grid grid-cols-2 gap-1 rounded-2xl bg-sunk p-1" role="radiogroup" aria-label="How big a plan">
+        {(
+          [
+            ['hobby', 'One thing'],
+            ['day', 'A full day'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="radio"
+            aria-checked={mode === id}
+            onClick={() => setModeChoice(id)}
+            className={`cursor-pointer rounded-xl py-2 text-sm font-semibold ${mode === id ? 'bg-surface shadow-sm' : 'text-muted'}`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
-      <Button onClick={() => router.push('/friends')}>Plan with friends</Button>
+      <Button kind="primary" onClick={() => go(mode)}>
+        Plan it
+      </Button>
+      <button type="button" onClick={() => router.push('/friends')} className="cursor-pointer self-center text-sm font-bold text-accent">
+        Plan with friends instead
+      </button>
     </main>
   );
 }

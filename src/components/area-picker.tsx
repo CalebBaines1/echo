@@ -9,7 +9,7 @@ import { Button } from './ui';
 /** Find an area by name or from the browser's location. Calls onPick with the chosen area. */
 export function AreaPicker({ current, onPick }: { current?: Area; onPick: (a: Area) => void }) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Area[] | null>(null);
+  const [results, setResults] = useState<Array<Area & { region?: string }> | null>(null);
   const [busy, setBusy] = useState<'search' | 'locate' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -96,10 +96,11 @@ export function AreaPicker({ current, onPick }: { current?: Area; onPick: (a: Ar
             <li key={`${a.label}-${a.lat}-${a.lon}`}>
               <button
                 type="button"
-                onClick={() => onPick(a)}
-                className="w-full cursor-pointer rounded-xl border border-line bg-surface px-3 py-2.5 text-left text-sm hover:border-accent"
+                onClick={() => onPick({ label: a.label, lat: a.lat, lon: a.lon })}
+                className="flex w-full cursor-pointer flex-col rounded-xl border border-line bg-surface px-3 py-2.5 text-left text-sm hover:border-accent"
               >
                 {a.label}
+                {a.region && <span className="text-xs text-faint">{a.region}</span>}
               </button>
             </li>
           ))}

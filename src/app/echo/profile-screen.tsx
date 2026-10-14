@@ -4,16 +4,16 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DevTools } from '@/components/dev-tools';
+import { PreferencesEditor } from '@/components/preferences-editor';
 import { CheckIcon, PlugIcon, SendIcon, XIcon } from '@/components/icons';
 import { Button, Chip, Label, LinkButton, Spinner, TabBar, Why } from '@/components/ui';
 import { pendingInvite } from '@/lib/invites';
 import { tasteKey } from '@/lib/onboarding/resolve';
 import type { MentionType } from '@/lib/onboarding/types';
-import type { BuiltProfile } from '@/lib/profile/build';
+import { buildProfile } from '@/lib/profile/build-client';
 import { shareTasteCard } from '@/lib/profile/taste-card';
 import { buildSignature, type EchoProfile, type TastePick } from '@/lib/profile/types';
 import { loadPlans, loadProfile, saveProfile, useStored } from '@/lib/store';
-import { apiFetch } from '@/lib/supabase/browser';
 import { Spoken } from '@/components/spoken';
 
 const TYPE_LABEL: Record<string, string> = {
@@ -52,26 +52,7 @@ export function EchoProfileScreen() {
     setBuilding(true);
     setError(null);
     try {
-      const res = await apiFetch('/api/profile/build', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tastes: p.tastes, activities: p.activities, preferences: p.preferences, exclude: p.skippedPicks ?? [] }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error ?? "Echo couldn't build your profile just now. Try again.");
-      const built = body as BuiltProfile;
-      setOffline(built.qlooUnavailable);
-      // Read the latest copy: reactions may have changed while this was running.
-      const latest = loadProfile() ?? p;
-      saveProfile({
-        ...latest,
-        summary: built.summary,
-        traits: built.traits,
-        leanings: built.leanings,
-        alsoLove: built.alsoLove,
-        builtAt: Date.now(),
-        builtFrom: buildSignature(latest),
-      });
+      setOffline((await buildProfile(p)).qlooUnavailable);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Echo couldn't build your profile just now. Try again.");
     } finally {
@@ -281,13 +262,16 @@ export function EchoProfileScreen() {
         </div>
       </section>
 
-      {invite ? (
+      <details className="rounded-2xl border border-line bg-surface px-3.5 py-3">
+        <summary className="cursor-pointer text-[0.9rem] font-bold">How you like to go out</summary>
+        <div className="mt-3">
+          <PreferencesEditor value={p.preferences} onChange={(preferences) => saveProfile({ ...(loadProfile() ?? p), preferences })} />
+        </div>
+      </details>
+
+      {invite && (
         <LinkButton href={`/join/${invite}`} kind="primary">
           Finish joining your friend
-        </LinkButton>
-      ) : (
-        <LinkButton href="/home" kind="primary">
-          Start using Echo
         </LinkButton>
       )}
       <div className="flex gap-2">

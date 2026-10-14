@@ -53,6 +53,18 @@ export function formatTime(hhmm: string): string {
   return m ? `${hour}:${String(m).padStart(2, '0')}${suffix}` : `${hour}${suffix}`;
 }
 
+/** "11:00-22:00, 23:00-24:00" as "11am–10pm, 11pm–midnight". Anything else passes through. */
+export function formatHours(hours: string): string {
+  const clock = (t: string) => (t === '24:00' || t === '00:00' ? 'midnight' : formatTime(t));
+  return hours
+    .split(/,\s*/)
+    .map((r) => {
+      const m = r.match(/^(\d{2}:\d{2})-(\d{2}:\d{2})$/);
+      return m ? (m[1] === '00:00' && m[2] === '24:00' ? 'all day' : `${m[1] === '00:00' ? '12am' : formatTime(m[1]!)}–${clock(m[2]!)}`) : r;
+    })
+    .join(', ');
+}
+
 export function formatDate(date: string): string {
   const [y, m, d] = date.split('-').map(Number);
   return new Date(y!, m! - 1, d!).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
