@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ContinueLink } from '@/components/continue-link';
 import { ArrowRightIcon } from '@/components/icons';
+import { SampleButton } from '@/components/sample-button';
 
 export default function WelcomePage() {
   return (
@@ -17,15 +18,15 @@ export default function WelcomePage() {
         <ol className="mt-2 flex flex-col gap-2 text-sm">
           <li className="flex gap-3">
             <span className="grid size-6 flex-none place-items-center rounded-full bg-accent-soft text-xs font-bold text-accent-text">1</span>
-            Tap what you love. About a minute.
+            Tap what you love and what you&apos;d like to try. About a minute.
           </li>
           <li className="flex gap-3">
             <span className="grid size-6 flex-none place-items-center rounded-full bg-accent-soft text-xs font-bold text-accent-text">2</span>
-            See your echo, and what Echo thinks you&apos;ll like.
+            Echo finds one real thing to do near you, matched to your taste.
           </li>
           <li className="flex gap-3">
             <span className="grid size-6 flex-none place-items-center rounded-full bg-accent-soft text-xs font-bold text-accent-text">3</span>
-            Get a real plan for this week. You say yes or no.
+            Say yes, go, and tell Echo how it went. It plans the next one better.
           </li>
         </ol>
       </div>
@@ -36,6 +37,7 @@ export default function WelcomePage() {
       >
         Start <ArrowRightIcon className="size-4" />
       </Link>
+      <SampleButton />
       <ContinueLink />
       <p className="text-center text-xs text-faint">No account needed. Echo never books or sends anything without your OK.</p>
     </main>
