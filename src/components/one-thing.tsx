@@ -48,7 +48,7 @@ export function OneThing({ plans }: { plans: Plan[] }) {
       ];
       // Today's theme for a fresh suggestion; "Another" draws a new one.
       const request = proposalRequest(profile, seeded(replace ? `${Date.now()}` : daySeed(profile.area.label)));
-      const { result, steps } = await runMission({ request, mode: 'hobby', when, profile, avoidPlaceIds: avoid, onStatus: setStatus });
+      const { result, steps } = await runMission({ request, mode: 'hobby', when, profile, avoidPlaceIds: avoid, avoidStrict: true, onStatus: setStatus });
       savePlan(toPlan(result, { mode: 'hobby', request, date: when.date, part: when.part, areaLabel: profile.area.label, steps, id: replace?.id, proposal: true }));
     } catch (err) {
       setError((err as Error).message);

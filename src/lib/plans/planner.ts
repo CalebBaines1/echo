@@ -20,8 +20,13 @@ export interface PlannerInput {
   date: string;
   part: DayPart;
   moods?: Mood[];
-  /** Places from recent plans to skip, unless the person loved them. */
+  /** Places already in recent or upcoming plans. */
   avoidPlaceIds?: string[];
+  /**
+   * Skip those places entirely (home's daily suggestion, which should be new).
+   * Otherwise they stay available, flagged, for when they're what was asked for.
+   */
+  avoidStrict?: boolean;
   tastes: HeardTaste[];
   activities: Activity[];
   preferences: Preferences;
@@ -73,6 +78,8 @@ How to work:
 4. Call finish_plan.
 
 What they ask for comes first. If the request or their "want to try" list names an activity, plan that activity. Places marked beyond_usual_distance are past their usual range: pick one only when it's the thing they asked for or want to try and nothing closer fits, and say how far it is in the summary ("it's 6 miles, a bit farther than usual"). Never quietly swap what they asked for for something else; if nothing fits at all, say so in the summary and offer the closest alternative.
+
+Places marked already_in_your_plans are in one of their recent or upcoming plans. Prefer something new. When one is still the best fit for what they asked (the only studio for the class they want), pick it and say in the summary that it's already in their plans, rather than swapping in something they didn't ask for.
 
 Drop results that don't belong in their category or don't suit an adult outing (a golf course listed as a café, a children's store for an adult) with rule_out.
 
@@ -275,7 +282,8 @@ export async function runPlanner(
       if (!places.some((p) => !avoid.has(p.id))) {
         const wider = await search(radiusMeters * 2).catch(() => []);
         if (wider.length) {
-          places = wider;
+          // Keep what was found close (already-planned places can still be the answer), add the farther ones.
+          places = [...places, ...wider.filter((w) => !places.some((p) => p.id === w.id))];
           emit({ kind: 'info', text: `Nothing close, so I looked farther for ${label}` });
         }
       }
@@ -304,10 +312,18 @@ export async function runPlanner(
     // Up to twice their usual distance is allowed but flagged; the planner only goes there for something they asked for.
     const limit = maxMiles ? maxMiles * 2 : Infinity;
     const usual = maxMiles ?? radiusMeters / METERS_PER_MILE;
-    const recent = places.filter((p) => avoid.has(p.id));
-    const usable = places.filter((p) => !avoid.has(p.id) && (p.distanceMeters === undefined || p.distanceMeters / METERS_PER_MILE <= limit));
-    emit(usable.length ? { kind: 'ok', text: usable.length === 1 ? `Found one of the ${label} near you` : `Found ${usable.length} ${label} near you` } : { kind: 'info', text: `No ${label} within reach` });
-    if (recent.length) emit({ kind: 'info', text: `Skipped ${recent.map((p) => p.name).join(', ')}: already in your plans` });
+    const inReach = (p: PlaceSummary) => p.distanceMeters === undefined || p.distanceMeters / METERS_PER_MILE <= limit;
+    const planned = places.filter((p) => avoid.has(p.id) && inReach(p));
+    const usable = places.filter((p) => inReach(p) && (!avoid.has(p.id) || !input.avoidStrict));
+    const fresh = usable.filter((p) => !avoid.has(p.id)).length;
+    if (fresh) emit({ kind: 'ok', text: fresh === 1 ? `Found one new ${label.replace(/s$/, '')} near you` : `Found ${fresh} new ${label} near you` });
+    else if (!usable.length) emit({ kind: 'info', text: `No ${label} within reach` });
+    if (planned.length) {
+      emit({
+        kind: 'info',
+        text: input.avoidStrict ? `Skipped ${planned.map((p) => p.name).join(', ')}: already in your plans` : `Already in your plans: ${planned.map((p) => p.name).join(', ')}`,
+      });
+    }
 
     const cards: PlaceCard[] = [];
     const rows = usable.map((p) => {
@@ -333,6 +349,7 @@ export async function runPlanner(
         [`hours_${day}`]: hoursThatDay ?? 'unknown',
         match: p.affinity !== undefined ? Math.round(p.affinity * 100) : null,
         ...(p.distanceMeters !== undefined && p.distanceMeters / METERS_PER_MILE > usual ? { beyond_usual_distance: true } : {}),
+        ...(avoid.has(p.id) ? { already_in_your_plans: true } : {}),
         matches_tastes: tasteReasons,
         tags: p.tags.slice(0, 5),
         description: p.description ?? null,

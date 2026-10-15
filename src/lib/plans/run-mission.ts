@@ -14,6 +14,8 @@ export async function runMission(input: {
   when: When;
   profile: EchoProfile;
   avoidPlaceIds: string[];
+  /** Skip already-planned places outright instead of offering them flagged. */
+  avoidStrict?: boolean;
   moods?: string[];
   onStatus?: (text: string) => void;
 }): Promise<{ result: PlannerResult; steps: Step[] }> {
@@ -27,6 +29,7 @@ export async function runMission(input: {
       part: input.when.part,
       moods: input.moods ?? [],
       avoidPlaceIds: input.avoidPlaceIds,
+      avoidStrict: input.avoidStrict ?? false,
       profile: profilePayload(input.profile),
     }),
   });
