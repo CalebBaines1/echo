@@ -22,11 +22,12 @@ export function AreaChip({ area }: { area: Area }) {
     <Link
       href={`/area?next=${encodeURIComponent(back)}`}
       className={`inline-flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-sm font-semibold ${
-        area.sample ? 'border-warn/50 bg-warn-soft text-warn' : 'border-transparent bg-accent-soft text-accent-text'
+        area.sample ? 'border-line bg-surface text-muted' : 'border-transparent bg-accent-soft text-accent-text'
       }`}
     >
       <PinIcon className="size-4" />
-      {area.sample ? 'Set your area' : area.label}
+      {area.label}
+      {area.sample && <span className="text-[11px] font-normal opacity-80">· change</span>}
     </Link>
   );
 }
