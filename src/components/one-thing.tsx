@@ -107,7 +107,7 @@ export function OneThing({ plans }: { plans: Plan[] }) {
           {when}
           {stop?.time ? `, ${formatTime(stop.time)}` : ''}: {stop?.name}
         </p>
-        <p className="text-sm text-muted">{stop?.why ?? proposal.summary}</p>
+        <p className="text-sm text-muted first-letter:uppercase">{stop?.why ?? proposal.summary}</p>
       </Link>
       {accepted ? (
         <p className="flex items-center gap-1.5 text-sm font-bold text-echo">
