@@ -87,7 +87,7 @@ function Home() {
   return (
     <main className="flex flex-1 flex-col gap-3">
       <div className="flex items-start justify-between gap-2">
-        <h1 className="font-voice text-[1.75rem] leading-tight font-medium">{profile.name ? `Hi ${profile.name}` : 'Hi there'}</h1>
+        <h1 className="flex-none font-voice text-[1.75rem] leading-tight font-medium whitespace-nowrap">{profile.name ? `Hi ${profile.name}` : 'Hi there'}</h1>
         <AreaChip area={profile.area} />
       </div>
 

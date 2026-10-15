@@ -21,13 +21,13 @@ export function AreaChip({ area }: { area: Area }) {
   return (
     <Link
       href={`/area?next=${encodeURIComponent(back)}`}
-      className={`inline-flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-sm font-semibold ${
+      className={`inline-flex max-w-full min-w-0 items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-sm font-semibold ${
         area.sample ? 'border-line bg-surface text-muted' : 'border-transparent bg-accent-soft text-accent-text'
       }`}
     >
       <PinIcon className="size-4" />
-      {area.label}
-      {area.sample && <span className="text-[11px] font-normal opacity-80">· change</span>}
+      <span className="truncate">{area.sample ? area.label.replace(/\s*\(sample\)$/, '') : area.label}</span>
+      {area.sample && <span className="flex-none text-[11px] font-normal whitespace-nowrap opacity-80">sample · change</span>}
     </Link>
   );
 }
